@@ -1,0 +1,24 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+app-id: org.example.Hello
+runtime: org.kde.Platform
+runtime-version: '6.10'
+sdk: org.kde.Sdk
+command: hello
+modules:
+  - name: hello
+    buildsystem: simple
+    build-commands:
+      - cc hello.c -o hello
+      - install -Dm755 hello /app/bin/hello
+      - install -Dm644 org.example.Hello.desktop /app/share/applications/org.example.Hello.desktop
+      - install -Dm644 org.example.Hello.svg /app/share/icons/hicolor/scalable/apps/org.example.Hello.svg
+    sources:
+      - type: file
+        path: hello.c
+      - type: file
+        path: org.example.Hello.desktop
+      - type: file
+        path: org.example.Hello.svg

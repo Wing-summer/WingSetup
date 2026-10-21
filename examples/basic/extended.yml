@@ -1,0 +1,64 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+schema_version: 1
+application:
+  id: org.example.Hello
+  name: Hello
+  version: '0.1.0'
+  summary: Extended backend demonstration
+  license: BSD-3-Clause
+  executable: build/hello
+  desktop: org.example.Hello.desktop
+  icon: org.example.Hello.svg
+project:
+  source: .
+  hooks: hooks.py:HelloHooks
+  commands:
+    - [cc, hello.c, -o, '{source}/build/hello']
+workspace: .wingsetup
+output: dist
+targets:
+  deb:
+    backend: deb
+    arch: x86_64
+    options:
+      package_name: wingsetup-hello
+      maintainer: wingsummer
+      depends: [libc6]
+  aur-release:
+    backend: aur
+    arch: any
+    options:
+      recipe: recipes/aur-release
+  aur-git:
+    backend: aur
+    arch: any
+    options:
+      recipe: recipes/aur-git
+  scripts:
+    backend: script
+    arch: any
+    options:
+      recipe: recipes/scripts
+      entry: installer.py
+  shell:
+    backend: makeself
+    arch: x86_64
+    options:
+      payload: build
+      startup: recipes/scripts/install.sh
+  shell-sh:
+    backend: makeself
+    arch: x86_64
+    options:
+      payload: build
+      startup: recipes/scripts/install.sh
+      suffix: sh
+  archive:
+    backend: custom_backend.py:ArchiveBackend
+    arch: x86_64
+    resources:
+      - source: hello.c
+        destination: source/hello.c

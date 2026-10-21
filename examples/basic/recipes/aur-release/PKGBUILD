@@ -1,0 +1,17 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+pkgname=wingsetup-hello
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='WingSetup local-source recipe demonstration'
+arch=('x86_64' 'aarch64')
+license=('BSD-3-Clause')
+source=('hello.c')
+sha256sums=('a5f3cade755cb6b938dcdb66c8fd7a8fe36363ac3220ab08c120efb79567731c')
+build() {
+    cc "$srcdir/hello.c" -o "$srcdir/hello"
+}
+package() {
+    install -Dm755 "$srcdir/hello" "$pkgdir/usr/bin/hello"
+}

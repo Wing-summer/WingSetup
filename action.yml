@@ -1,0 +1,33 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+name: WingSetup
+description: Package an application using a workspace-local Python environment
+inputs:
+  config:
+    description: Application YAML path, relative to the GitHub workspace
+    required: true
+  target:
+    description: One target name from the application YAML
+    required: true
+outputs:
+  artifact-paths:
+    description: Newline-separated package and checksum paths
+    value: ${{ steps.package.outputs.artifact-paths }}
+runs:
+  using: composite
+  steps:
+    - name: Install framework in a virtual environment
+      shell: bash
+      env:
+        FRAMEWORK_ROOT: ${{ github.action_path }}
+        WINGSETUP_ROOT: ${{ github.action_path }}
+      run: python "$FRAMEWORK_ROOT/ci/environment.py"
+    - name: Run selected target
+      id: package
+      shell: bash
+      env:
+        FRAMEWORK_ROOT: ${{ github.action_path }}
+        PACKAGE_CONFIG: ${{ inputs.config }}
+        PACKAGE_TARGET: ${{ inputs.target }}
+      run: '"$WINGSETUP_PYTHON" "$FRAMEWORK_ROOT/ci/run.py"'

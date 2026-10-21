@@ -1,0 +1,53 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+name: Python quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.14']
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Select Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install development dependencies locally
+        uses: ./.github/actions/python-env
+        with:
+          development: 'true'
+
+      - name: Check strict Python types
+        run: '"$WINGSETUP_PYTHON" -m pyright'
+
+      - name: Run unit tests and example coverage checks
+        run: '"$WINGSETUP_PYTHON" -m pytest -q'
+
+      - name: Check patch whitespace
+        run: git diff --check

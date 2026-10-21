@@ -1,0 +1,6 @@
+<!--
+Copyright (c) 2026, wingsummer
+SPDX-License-Identifier: BSD-3-Clause
+See LICENSE in the project root for license information.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128"><rect width="128" height="128" rx="24" fill="#305faa"/><path d="M30 32v64m68-64v64M30 64h68" stroke="white" stroke-width="14"/></svg>

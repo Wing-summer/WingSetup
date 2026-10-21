@@ -1,0 +1,61 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+schema_version: 1
+application:
+  id: org.example.Widgets
+  name: WidgetsDemo
+  version: '0.1.0'
+  summary: Qt Widgets resource and plugin deployment verification
+  license: BSD-3-Clause
+  executable: '{build}/widgets-demo'
+  desktop: org.example.Widgets.desktop
+  icon: org.example.Widgets.svg
+project:
+  source: .
+  hooks: hooks.py:WidgetsHooks
+  commands:
+    - [cmake, -G, Ninja, -S, '{source}', -B, '{build}', -DCMAKE_BUILD_TYPE=Release]
+    - [cmake, --build, '{build}', --parallel, '2']
+workspace: .wingsetup
+output: dist
+targets:
+  appimage:
+    backend: appimage
+    arch: x86_64
+    options:
+      plugins: [qt]
+      environment:
+        QMAKE: qmake6
+        NO_STRIP: '1'
+        EXTRA_PLATFORM_PLUGINS: libqoffscreen.so
+      dependency_dirs: [usr/bin/plugin]
+  flatpak-sdk:
+    backend: flatpak
+    arch: x86_64
+    options:
+      mode: sdk
+      runtime: org.kde.Platform
+      sdk: org.kde.Sdk
+      runtime_version: '6.10'
+      installation: system
+      manifest: org.example.Widgets.yml
+  windows:
+    backend: inno
+    platform: Windows
+    arch: x86_64
+    executable: '{build}/widgets-demo.exe'
+    options:
+      formats: [zip, inno]
+      qt_args: [--release, --include-plugins, "qwindows,qoffscreen"]
+  macos:
+    backend: macos
+    platform: Darwin
+    arch: aarch64
+    executable: '{build}/widgets-demo.app'
+    options:
+      formats: [app, zip, dmg]
+      extra_executables:
+        - Contents/PlugIns/demo_plugin.wingplg
+        - Contents/PlugIns/platforms/libqoffscreen.dylib

@@ -1,0 +1,137 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+name: Reusable application packaging
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: Native runner label matching the target OS and architecture
+        type: string
+        required: true
+      application_repository:
+        description: Application repository in owner/name form
+        type: string
+        required: true
+      application_ref:
+        description: Reviewed application commit SHA or tag
+        type: string
+        required: true
+      framework_repository:
+        description: WingSetup repository in owner/name form
+        type: string
+        required: true
+      framework_ref:
+        description: Reviewed WingSetup commit SHA or tag
+        type: string
+        required: true
+      config:
+        description: Application-relative YAML configuration path
+        type: string
+        required: true
+      target:
+        description: One named target to package
+        type: string
+        required: true
+      qt_version:
+        description: Optional Qt version; empty skips Qt preparation
+        type: string
+        default: ''
+      qt_host:
+        description: Qt host identifier such as linux, windows, or mac
+        type: string
+        default: ''
+      qt_arch:
+        description: Qt toolchain architecture matching the native runner
+        type: string
+        default: ''
+      qt_modules:
+        description: Optional space-separated Qt module names
+        type: string
+        default: ''
+      setup_script:
+        description: Optional application-relative trusted preparation script
+        type: string
+        default: ''
+    secrets:
+      MACOS_SIGN_IDENTITY:
+        required: false
+      MACOS_NOTARY_PROFILE:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package ${{ inputs.target }} on ${{ inputs.runner }}
+    timeout-minutes: 60
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Check out application source
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.application_repository }}
+          ref: ${{ inputs.application_ref }}
+          path: application
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Check out reviewed framework source
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.framework_repository }}
+          ref: ${{ inputs.framework_ref }}
+          path: framework
+          persist-credentials: false
+
+      - name: Select Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install the requested Qt SDK
+        uses: jurplel/install-qt-action@v4
+        if: inputs.qt_version != ''
+        with:
+          version: ${{ inputs.qt_version }}
+          host: ${{ inputs.qt_host }}
+          arch: ${{ inputs.qt_arch }}
+          modules: ${{ inputs.qt_modules }}
+          cache: true
+
+      - name: Configure the MSVC compiler
+        uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - name: Run application-owned tool preparation
+        if: inputs.setup_script != ''
+        working-directory: application
+        shell: bash
+        env:
+          SETUP_SCRIPT: ${{ inputs.setup_script }}
+        run: |
+          case "$SETUP_SCRIPT" in
+            *.ps1) pwsh -File "$SETUP_SCRIPT" ;;
+            *.py) python "$SETUP_SCRIPT" ;;
+            *) bash "$SETUP_SCRIPT" ;;
+          esac
+
+      - name: Package the selected application target
+        uses: ./framework
+        id: package
+        env:
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          MACOS_NOTARY_PROFILE: ${{ secrets.MACOS_NOTARY_PROFILE }}
+        with:
+          config: application/${{ inputs.config }}
+          target: ${{ inputs.target }}
+
+      - name: Upload packages, checksums, and artifact report
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-${{ inputs.target }}-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ steps.package.outputs.artifact-paths }}
+          if-no-files-found: error
+          compression-level: 0

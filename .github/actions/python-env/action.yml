@@ -1,0 +1,18 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+name: Workspace Python environment
+description: Install this checkout into its local CI virtual environment
+inputs:
+  development:
+    description: Include strict type checking and test dependencies
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Prepare workspace Python
+      shell: bash
+      env:
+        WINGSETUP_DEVELOPMENT: ${{ inputs.development }}
+      run: python ci/environment.py

@@ -1,0 +1,26 @@
+{
+  "linuxdeploy-x86_64.AppImage": {
+    "url": "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage",
+    "sha256": "8aea8da0f7f7039d2a2cecb14657d752a222a5e1d3825caeef186c82f751cdd1"
+  },
+  "appimagetool-x86_64.AppImage": {
+    "url": "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage",
+    "sha256": "95cbe7cce9717fce90c484e34052ee7c7f1d7635b33c12525b4776826a7d29b6"
+  },
+  "linuxdeploy-plugin-qt-x86_64.AppImage": {
+    "url": "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage",
+    "sha256": "cfc1055b2b9dbc08412b579f20990b7b41a17b61beaa5847dc9477c96c9e9617"
+  },
+  "runtime-x86_64": {
+    "url": "https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64",
+    "sha256": "617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46"
+  },
+  "makeself.sh": {
+    "url": "https://raw.githubusercontent.com/megastep/makeself/master/makeself.sh",
+    "sha256": "60bef99358e416640c64f494bc869a729c003699db56fb3fa6eded3f8cb1f163"
+  },
+  "makeself-header.sh": {
+    "url": "https://raw.githubusercontent.com/megastep/makeself/master/makeself-header.sh",
+    "sha256": "18b68cd3be4d86bc0e191547c4f134dee874afb458ed517d6c4e47d55e3073d6"
+  }
+}

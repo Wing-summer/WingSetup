@@ -1,0 +1,350 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+name: Example packages
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: examples-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Check all 14 declared cases
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Select Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install framework locally
+        uses: ./.github/actions/python-env
+
+      - name: Validate every example target and built-in backend
+        id: coverage
+        shell: bash
+        run: '"$WINGSETUP_PYTHON" ci/examples.py --coverage'
+
+  linux:
+    name: Linux / ${{ matrix.id }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: basic-appimage
+            qt: false
+          - id: basic-deb
+            qt: false
+          - id: basic-shell
+            qt: false
+          - id: basic-shell-sh
+            qt: false
+          - id: basic-archive
+            qt: false
+          - id: qt-appimage
+            qt: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Select Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install Qt for the Widgets example
+        if: matrix.qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.0'
+          host: linux
+          arch: linux_gcc_64
+          tools: tools_ninja
+          cache: true
+
+      - name: Restore verified packaging tools
+        uses: actions/cache@v5
+        with:
+          path: .tools/ci
+          key: example-tools-ubuntu24-x64-${{ hashFiles('ci/tools.lock.json') }}
+
+      - name: Install framework locally
+        uses: ./.github/actions/python-env
+
+      - name: Prepare native Linux packaging tools
+        run: '"$WINGSETUP_PYTHON" ci/prepare.py linux'
+
+      - name: Build, package, verify checksums, and launch the example
+        env:
+          EXAMPLE_CASE: ${{ matrix.id }}
+        run: '"$WINGSETUP_PYTHON" ci/examples.py --case "$EXAMPLE_CASE"'
+
+      - name: Upload this case's execution receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: receipt-${{ matrix.id }}
+          path: .ci-results/${{ matrix.id }}.json
+          include-hidden-files: true
+          if-no-files-found: warn
+
+      - name: Upload packages and validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}
+          path: examples/**/dist/
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Preserve failed staging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}-diagnostics
+          path: |
+            examples/**/.wingsetup/**/commands.log
+            examples/**/.wingsetup/**/failure.log
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  flatpak:
+    name: Flatpak / ${{ matrix.id }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: basic-flatpak-binary
+          - id: basic-flatpak-sdk
+          - id: qt-flatpak-sdk
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Select Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install framework locally
+        uses: ./.github/actions/python-env
+
+      - name: Prepare KDE 6.10 Platform and SDK
+        run: '"$WINGSETUP_PYTHON" ci/prepare.py flatpak'
+
+      - name: Build and verify the bundle and sandbox launch
+        env:
+          EXAMPLE_CASE: ${{ matrix.id }}
+        run: '"$WINGSETUP_PYTHON" ci/examples.py --case "$EXAMPLE_CASE"'
+
+      - name: Upload this case's execution receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: receipt-${{ matrix.id }}
+          path: .ci-results/${{ matrix.id }}.json
+          include-hidden-files: true
+          if-no-files-found: warn
+
+      - name: Upload Flatpak bundle and validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}
+          path: examples/**/dist/
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Preserve failed staging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}-diagnostics
+          path: |
+            examples/**/.wingsetup/**/commands.log
+            examples/**/.wingsetup/**/failure.log
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  native:
+    name: Native / ${{ matrix.id }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: qt-windows
+            runner: windows-latest
+            qt_host: windows
+            qt_arch: win64_msvc2022_64
+          - id: qt-macos
+            runner: macos-latest
+            qt_host: mac
+            qt_arch: clang_64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Select Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install native Qt SDK and Ninja
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.10.0'
+          host: ${{ matrix.qt_host }}
+          arch: ${{ matrix.qt_arch }}
+          tools: tools_ninja
+          cache: true
+
+      - name: Configure the MSVC compiler
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install framework locally
+        uses: ./.github/actions/python-env
+
+      - name: Prepare native packaging tools
+        run: '"$WINGSETUP_PYTHON" ci/prepare.py native'
+
+      - name: Build every native format and launch archived payloads
+        env:
+          EXAMPLE_CASE: ${{ matrix.id }}
+        run: '"$WINGSETUP_PYTHON" ci/examples.py --case "$EXAMPLE_CASE"'
+
+      - name: Upload this case's execution receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: receipt-${{ matrix.id }}
+          path: .ci-results/${{ matrix.id }}.json
+          include-hidden-files: true
+          if-no-files-found: warn
+
+      - name: Upload native packages and validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}
+          path: examples/**/dist/
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Preserve failed staging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}-diagnostics
+          path: |
+            examples/**/.wingsetup/**/commands.log
+            examples/**/.wingsetup/**/failure.log
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  recipes:
+    name: Arch / ${{ matrix.id }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: basic-aur-release
+          - id: basic-aur-git
+          - id: basic-scripts
+    steps:
+      - name: Prepare the disposable Arch container
+        run: pacman -Syu --noconfirm git python python-pip
+
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install framework locally
+        run: python ci/environment.py
+
+      - name: Export and validate recipes as an unprivileged user
+        env:
+          EXAMPLE_CASE: ${{ matrix.id }}
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- .venv-ci/bin/python ci/examples.py --case "$EXAMPLE_CASE"
+
+      - name: Upload this case's execution receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: receipt-${{ matrix.id }}
+          path: .ci-results/${{ matrix.id }}.json
+          include-hidden-files: true
+          if-no-files-found: warn
+
+      - name: Upload AUR and script recipes
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}
+          path: examples/basic/dist/
+          if-no-files-found: error
+
+  all-examples:
+    name: All 14 example cases passed
+    if: always()
+    needs: [plan, linux, flatpak, native, recipes]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Select Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install framework locally
+        uses: ./.github/actions/python-env
+
+      - name: Download per-case execution receipts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: receipt-*
+          path: .ci-results
+          merge-multiple: true
+
+      - name: Publish coverage table and reject failed or missing cases
+        if: always()
+        shell: bash
+        env:
+          EXAMPLE_JOB_RESULTS: ${{ toJSON(needs) }}
+        run: '"$WINGSETUP_PYTHON" ci/examples.py --report .ci-results'

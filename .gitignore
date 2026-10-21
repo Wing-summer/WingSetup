@@ -1,0 +1,52 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+# Python environments, bytecode, and distribution metadata.
+.venv/
+.venv-*/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Build trees, package outputs, and isolated WingSetup runs at any depth.
+build/
+build-*/
+dist/
+.wingsetup/
+.flatpak-builder/
+
+# Workspace-local tools and dependency caches.
+.tools/
+.cache/
+
+# Static analysis, tests, and coverage reports.
+.pytest_cache/
+.ci-results/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Machine-local editor state and operating-system files.
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local credentials and environment overrides; keep documented templates visible.
+.env
+.env.*
+!.env.example
+!.env.sample

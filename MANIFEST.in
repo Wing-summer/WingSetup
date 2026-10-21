@@ -1,0 +1,23 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+include LICENSE README.md CONTRIBUTING.md CHANGELOG.md AGENTS.md
+include .editorconfig .gitattributes action.yml
+recursive-include ci *.py *.json
+recursive-include .github *.yml *.md
+recursive-include docs *.md
+recursive-include tests *.py
+recursive-include examples *.md *.py *.yml *.c *.cpp *.svg *.desktop *.ts *.qss *.json *.luau *.sh PKGBUILD .SRCINFO CMakeLists.txt
+prune .tools
+prune .cache
+prune .venv
+prune .venv-ci
+prune build
+prune dist
+prune examples/basic/build
+prune examples/basic/dist
+prune examples/basic/.wingsetup
+prune examples/qtwidgets/dist
+prune examples/qtwidgets/.wingsetup
+global-exclude *.py[cod]

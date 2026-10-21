@@ -1,0 +1,114 @@
+[
+  {
+    "id": "basic-appimage",
+    "config": "examples/basic/package.yml",
+    "target": "appimage",
+    "group": "linux",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "basic-flatpak-binary",
+    "config": "examples/basic/package.yml",
+    "target": "flatpak-binary",
+    "group": "flatpak",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "basic-flatpak-sdk",
+    "config": "examples/basic/package.yml",
+    "target": "flatpak-sdk",
+    "group": "flatpak",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "basic-deb",
+    "config": "examples/basic/extended.yml",
+    "target": "deb",
+    "group": "linux",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "basic-shell",
+    "config": "examples/basic/extended.yml",
+    "target": "shell",
+    "group": "linux",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "basic-shell-sh",
+    "config": "examples/basic/extended.yml",
+    "target": "shell-sh",
+    "group": "linux",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "basic-archive",
+    "config": "examples/basic/extended.yml",
+    "target": "archive",
+    "group": "linux",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "basic-aur-release",
+    "config": "examples/basic/extended.yml",
+    "target": "aur-release",
+    "group": "recipes",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "basic-aur-git",
+    "config": "examples/basic/extended.yml",
+    "target": "aur-git",
+    "group": "recipes",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "basic-scripts",
+    "config": "examples/basic/extended.yml",
+    "target": "scripts",
+    "group": "recipes",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "qt-appimage",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "appimage",
+    "group": "linux",
+    "runner": "ubuntu-24.04",
+    "qt": true
+  },
+  {
+    "id": "qt-flatpak-sdk",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "flatpak-sdk",
+    "group": "flatpak",
+    "runner": "ubuntu-24.04",
+    "qt": false
+  },
+  {
+    "id": "qt-windows",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "windows",
+    "group": "native",
+    "runner": "windows-latest",
+    "qt": true
+  },
+  {
+    "id": "qt-macos",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "macos",
+    "group": "native",
+    "runner": "macos-latest",
+    "qt": true
+  }
+]

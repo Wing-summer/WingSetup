@@ -1,0 +1,51 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+schema_version: 1
+application:
+  id: org.example.Hello
+  name: Hello
+  version: '0.1.0'
+  summary: Minimal WingSetup demonstration
+  license: BSD-3-Clause
+  executable: build/hello
+  desktop: org.example.Hello.desktop
+  icon: org.example.Hello.svg
+project:
+  source: .
+  hooks: hooks.py:HelloHooks
+  commands:
+    - [cc, hello.c, -o, '{source}/build/hello']
+# The commands above use a fixed executable path so application.executable can
+# refer to it. The hook/build context also offers an isolated {build} directory.
+workspace: .wingsetup
+output: dist
+
+targets:
+  appimage:
+    backend: appimage
+    arch: x86_64
+    options:
+      linuxdeploy: linuxdeploy
+      appimagetool: appimagetool
+  flatpak-binary:
+    backend: flatpak
+    arch: x86_64
+    options:
+      mode: binary
+      runtime: org.kde.Platform
+      sdk: org.kde.Sdk
+      runtime_version: '6.10'
+      installation: system
+  flatpak-sdk:
+    backend: flatpak
+    arch: x86_64
+    options:
+      mode: sdk
+      runtime: org.kde.Platform
+      sdk: org.kde.Sdk
+      runtime_version: '6.10'
+      installation: system
+      branch: sdk
+      manifest: org.example.Hello.yml
