@@ -26,6 +26,7 @@ targets:
     arch: x86_64
     options:
       plugins: [qt]
+      qt_platforms: [xcb, wayland, offscreen]
       environment:
         QMAKE: qmake6
         NO_STRIP: '1'
@@ -48,11 +49,28 @@ targets:
     executable: '{build}/widgets-demo.exe'
     options:
       formats: [zip, inno]
+      default_dir: '{localappdata}\Programs\WidgetsDemo'
+      privileges: lowest
+      setup:
+        AppPublisher: WingSetup example
+        WizardStyle: modern
+        UsePreviousAppDir: 'yes'
+      file_excludes: ['*.pdb']
       qt_args: [--release, --include-plugins, "qwindows,qoffscreen"]
   macos:
     backend: macos
     platform: Darwin
     arch: aarch64
+    executable: '{build}/widgets-demo.app'
+    options:
+      formats: [app, zip, dmg]
+      extra_executables:
+        - Contents/PlugIns/demo_plugin.wingplg
+        - Contents/PlugIns/platforms/libqoffscreen.dylib
+  macos-intel:
+    backend: macos
+    platform: Darwin
+    arch: x86_64
     executable: '{build}/widgets-demo.app'
     options:
       formats: [app, zip, dmg]

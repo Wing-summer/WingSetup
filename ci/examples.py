@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import time
 import platform
 import subprocess
 import tarfile
@@ -22,6 +23,7 @@ from wingsetup.config import load_config
 from wingsetup.core import run_target
 from wingsetup.model import AppImageOptions, Artifact, Config, SetupError, Target
 from wingsetup.registry import BACKENDS
+from wingsetup.platforms import normalize_arch
 from wingsetup.backends.inno import InnoOptions
 from wingsetup.backends.macos import MacOSOptions
 from wingsetup.backends.makeself import MakeselfOptions
@@ -74,6 +76,7 @@ def load_cases() -> tuple[ExampleCase, ...]:
     raw: object = json.loads(MANIFEST.read_text(encoding="utf-8"))
     cases: list[ExampleCase] = []
     configured: set[tuple[str, str]] = set()
+    environments: set[tuple[str, str, str]] = set()
     backends: set[str] = set()
     for value in sequence(raw, "examples"):
         item = mapping(value, "case")
@@ -94,10 +97,11 @@ def load_cases() -> tuple[ExampleCase, ...]:
             (target for target in config.targets if target.name == case.target), None)
         if target is None:
             raise SetupError(f"Unknown example target: {case.id}")
-        if any(previous.id == case.id for previous in cases) or (case.config, case.target) in configured:
+        if any(previous.id == case.id for previous in cases) or (case.config, case.target, case.runner) in environments:
             raise SetupError(f"Duplicate example case: {case.id}")
         cases.append(case)
         configured.add((case.config, case.target))
+        environments.add((case.config, case.target, case.runner))
         backends.add(target.backend)
     expected = {(path.relative_to(ROOT).as_posix(), target.name)
                 for path in (ROOT / "examples").rglob("*.yml")
@@ -107,6 +111,12 @@ def load_cases() -> tuple[ExampleCase, ...]:
     if configured != expected or set(BACKENDS) - backends:
         raise SetupError(
             f"Incomplete example coverage: targets={expected - configured}, backends={set(BACKENDS) - backends}")
+    for case in cases:
+        if case.group in {"linux", "flatpak"}:
+            runners = {entry.runner for entry in cases
+                       if (entry.config, entry.target) == (case.config, case.target)}
+            if runners != {"ubuntu-22.04", "ubuntu-26.04"}:
+                raise SetupError(f"Incomplete example coverage: LTS endpoints for {case.id}: {runners}")
     return tuple(cases)
 
 
@@ -224,10 +234,12 @@ def coverage_summary(cases: tuple[ExampleCase, ...]) -> str:
         formats = expected_formats(case)
         launch = "ZIP payload only / 仅 ZIP 载荷" if "inno" in formats else "Not executed / 不执行" if formats[0] in {
             "aur", "script"} else "Required / 必须通过"
+        if requires_wayland(case):
+            launch = "Offscreen + Wayland required / 两者均须通过"
         lines.append(
             f"| {case.id} | {case.runner} | {output_labels(case)} | {launch} |")
     lines += ["", f"Total / 总计: **{len(cases)} cases**; all include SHA-256 checks. / 全部检查 SHA-256。",
-              "Installer execution, Developer ID/notarization, Intel/universal2 are outside this baseline. / 本基准不执行安装器，不覆盖 Developer ID/公证和 Intel/universal2。"]
+              "Installer execution, Developer ID/notarization, universal2 are outside this baseline. / 本基准不执行安装器，不覆盖 Developer ID/公证和 universal2。"]
     return "\n".join(lines)
 
 
@@ -241,6 +253,7 @@ def write_receipt(case: ExampleCase, result: dict[str, object]) -> None:
     directory = ROOT / ".ci-results"
     directory.mkdir(exist_ok=True)
     value = {**result, "case": case.id, "config": case.config, "target": case.target,
+             "runner": case.runner,
              "host": platform.system(), "arch": platform.machine(),
              "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", "local"),
@@ -260,8 +273,8 @@ def report_results(cases: tuple[ExampleCase, ...], directory: Path) -> bool:
         True only when every case and upstream job succeeded with complete evidence.
     """
     rows = ["## Execution results / 实际执行结果", "",
-            "| Case / 用例 | Status / 状态 | Outputs / 产物 | Checksum / 校验 | Launch / 启动 |",
-            "| --- | --- | --- | --- | --- |"]
+            "| Case / 用例 | Runner | Status / 状态 | Outputs / 产物 | Checksum / 校验 | Launch / 启动 |",
+            "| --- | --- | --- | --- | --- | --- |"]
     passed = 0
     for case in cases:
         path = directory / f"{case.id}.json"
@@ -282,13 +295,15 @@ def report_results(cases: tuple[ExampleCase, ...], directory: Path) -> bool:
                 required = [item for item in evidence if item.get(
                     "format") not in {"inno", "aur", "script"}]
                 launched = all(item.get("launch") is True for item in required)
-                complete = current and result.get("case") == case.id and result.get(
+                if requires_wayland(case):
+                    launched = launched and any(item.get("wayland") is True for item in evidence)
+                complete = current and result.get("runner") == case.runner and result.get("case") == case.id and result.get(
                     "status") == "passed" and actual == set(formats) and integrity and launched
                 if complete:
                     passed += 1
                     status = "PASS / 通过"
                     checksum = "PASS"
-                    launch = "PASS" if required else "Not executed / 不执行"
+                    launch = "Offscreen + Wayland PASS" if requires_wayland(case) else "PASS" if required else "Not executed / 不执行"
                     if "inno" in formats:
                         launch = "ZIP PASS; installer not run / 安装器未执行"
                 else:
@@ -297,7 +312,7 @@ def report_results(cases: tuple[ExampleCase, ...], directory: Path) -> bool:
             except (OSError, ValueError, SetupError):
                 status = "INVALID / 无效执行记录"
         rows.append(
-            f"| {case.id} | {status} | {output_labels(case)} | {checksum} | {launch} |")
+            f"| {case.id} | {case.runner} | {status} | {output_labels(case)} | {checksum} | {launch} |")
     raw_jobs: object = json.loads(os.environ.get("EXAMPLE_JOB_RESULTS", "{}"))
     jobs = mapping(raw_jobs, "job results")
     successful_jobs = all(mapping(value, "job").get(
@@ -311,12 +326,15 @@ def report_results(cases: tuple[ExampleCase, ...], directory: Path) -> bool:
     return passed == len(cases) and successful_jobs
 
 
-def command(arguments: list[str], *, marker: str | None = None) -> str:
+def command(arguments: list[str], *, marker: str | None = None, platform: str = "offscreen",
+            environment: dict[str, str] | None = None) -> str:
     """Execute a verification command with host Qt deployment overrides cleared.
 
     Args:
         arguments: Executable and explicit arguments; installers are never invoked.
         marker: Optional success text that must be present in captured output.
+        platform: Qt platform selected for the launch, without host-plugin fallback.
+        environment: Additional isolated compositor environment overrides.
 
     Returns:
         Combined process output from a successful verification.
@@ -331,7 +349,8 @@ def command(arguments: list[str], *, marker: str | None = None) -> str:
     if qt_root:
         env["PATH"] = os.pathsep.join(part for part in env.get("PATH", "").split(os.pathsep)
                                       if not Path(part).resolve().is_relative_to(Path(qt_root).resolve()))
-    env["QT_QPA_PLATFORM"] = "offscreen"
+    env["QT_QPA_PLATFORM"] = platform
+    env.update(environment or {})
     if marker and marker.startswith("WIDGETS_DEPLOY_OK"):
         env["QT_DEBUG_PLUGINS"] = "1"
     try:
@@ -351,7 +370,58 @@ def command(arguments: list[str], *, marker: str | None = None) -> str:
     return result.stdout
 
 
-def verify_archive(artifact: Artifact, root: Path, marker: str, executable: str) -> None:
+def verify_wayland(arguments: list[str], root: Path, marker: str) -> None:
+    """Launch the packaged application against a private headless Weston compositor.
+
+    Args:
+        arguments: Packaged executable and smoke-test arguments.
+        root: Temporary verification directory holding the private runtime socket.
+        marker: Application success marker required from the Wayland launch.
+
+    Raises:
+        SetupError: The compositor cannot start or the actual Wayland launch fails.
+    """
+    runtime = root / "wayland-runtime"
+    runtime.mkdir(mode=0o700)
+    log = root / "weston.log"
+    environment = {"XDG_RUNTIME_DIR": str(runtime), "WAYLAND_DISPLAY": "wingsetup-wayland"}
+    with log.open("w", encoding="utf-8") as stream:
+        process = subprocess.Popen(["weston", "--backend=headless-backend.so", "--use-pixman", "--no-config",
+                                    "--socket=wingsetup-wayland", "--idle-time=0"],
+                                   env={**os.environ, **environment}, stdout=stream, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.monotonic() + 15
+            while not (runtime / "wingsetup-wayland").exists():
+                if process.poll() is not None or time.monotonic() >= deadline:
+                    raise SetupError("Headless Weston failed to create its Wayland socket")
+                time.sleep(0.1)
+            command(arguments, marker=marker, platform="wayland", environment=environment)
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            stream.flush()
+            print(log.read_text(encoding="utf-8"), flush=True)
+
+
+def requires_wayland(case: ExampleCase) -> bool:
+    """Determine whether the declared example requires a real Wayland launch.
+
+    Args:
+        case: Case whose AppImage Qt options determine the acceptance requirement.
+
+    Returns:
+        True when qt_platforms explicitly includes Wayland.
+    """
+    config = load_config(ROOT / case.config)
+    target = next(target for target in config.targets if target.name == case.target)
+    return isinstance(target.options, AppImageOptions) and "wayland" in target.options.qt_platforms
+
+
+def verify_archive(artifact: Artifact, root: Path, marker: str, executable: str, *, wayland: bool = False) -> None:
     """Inspect and launch an archived example without invoking installation logic.
 
     Args:
@@ -359,6 +429,7 @@ def verify_archive(artifact: Artifact, root: Path, marker: str, executable: str)
         root: Empty directory used for extraction or read-only DMG mounting.
         marker: Expected application launch success message.
         executable: Entry filename expected in portable native packages.
+        wayland: Require an additional real Wayland launch for the AppImage.
     """
     if artifact.format == "appimage":
         command([str(artifact.path), "--appimage-extract-and-run",
@@ -425,6 +496,10 @@ def run_case(case: ExampleCase) -> None:
     config: Config = load_config(ROOT / case.config)
     target: Target = next(
         target for target in config.targets if target.name == case.target)
+    if target.platform != "any" and target.platform != platform.system():
+        raise SetupError(f"Example {case.id} requires native {target.platform}")
+    if target.arch not in {"any", "universal2"} and target.arch != normalize_arch(platform.machine()):
+        raise SetupError(f"Example {case.id} requires native {target.arch}")
     if isinstance(target.options, AppImageOptions):
         target = replace(target, options=replace(
             target.options, runtime_file=ROOT / ".tools/ci/runtime-x86_64"))
@@ -446,9 +521,9 @@ def run_case(case: ExampleCase) -> None:
         if digest != output.sha256 or sidecar != f"{digest}  {output.path.name}":
             raise SetupError("Artifact SHA-256 or checksum sidecar differs")
         with tempfile.TemporaryDirectory(prefix="wingsetup-verify-") as directory:
-            verify_archive(output, Path(directory), marker, entry)
+            verify_archive(output, Path(directory), marker, entry, wayland=requires_wayland(case))
         checks.append({"path": str(output.path), "format": output.format, "sha256": digest,
-                       "checksum": True, "launch": output.format not in {"inno", "aur", "script", "flatpak"}})
+                       "checksum": True, "wayland": requires_wayland(case), "launch": output.format not in {"inno", "aur", "script", "flatpak"}})
     if target.backend == "flatpak":
         work = max(config.workspace.glob(
             f"{target.name}-*"), key=lambda path: path.stat().st_mtime_ns)

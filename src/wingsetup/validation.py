@@ -164,3 +164,24 @@ class ConfigPaths:
         """
         name = string(value, label)
         return str((self.base / name).resolve()) if "/" in name or "\\" in name else name
+
+
+def patterns(value: object, where: str) -> tuple[str, ...]:
+    """Validate portable relative glob patterns used by copy and output filters.
+
+    Args:
+        value: YAML list of source-relative or deployment-relative patterns.
+        where: Configuration field used in actionable validation errors.
+
+    Returns:
+        Validated POSIX-style patterns without absolute paths or parent traversal.
+
+    Raises:
+        SetupError: A pattern is absolute, contains a drive prefix, or traverses parents.
+    """
+    import re
+    result = strings(value, where)
+    for pattern in result:
+        if pattern.startswith("/") or "\\" in pattern or ".." in pattern.split("/") or re.match(r"^[A-Za-z]:", pattern) or pattern in {".", "./", "/"}:
+            raise SetupError(f"{where}: expected relative glob pattern: {pattern}")
+    return result

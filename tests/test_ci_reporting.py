@@ -50,9 +50,10 @@ def success_receipts(module: ModuleType, directory: Path) -> None:
     """
     for case in module.load_cases():
         value = {"case": case.id, "status": "passed", "run_id": "local",
-                 "run_attempt": "local", "commit": "local",
+                 "run_attempt": "local", "commit": "local", "runner": case.runner,
                  "artifacts": [{"format": name, "checksum": True,
-                                "launch": name not in {"inno", "aur", "script"}}
+                                "launch": name not in {"inno", "aur", "script"},
+                                "wayland": module.requires_wayland(case)}
                                for name in module.expected_formats(case)]}
         (directory /
          f"{case.id}.json").write_text(json.dumps(value), encoding="utf-8")
@@ -61,10 +62,53 @@ def success_receipts(module: ModuleType, directory: Path) -> None:
 class CIReportTests(unittest.TestCase):
     """Exercise visible matrix completeness and fail-closed result aggregation."""
 
+    def test_linux_qt_provisioning_uses_release_specific_svg_packages(self) -> None:
+        """Keep Jammy's renamed SVG development package and runtime plugin explicit."""
+        spec = importlib.util.spec_from_file_location("ci_prepare_driver", ROOT / "ci/prepare.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        jammy = module.linux_qt_packages("22.04")
+        latest = module.linux_qt_packages("26.04")
+        self.assertIn("libqt6svg6-dev", jammy)
+        self.assertNotIn("qt6-svg-dev", jammy)
+        self.assertIn("qt6-svg-dev", latest)
+        self.assertNotIn("libqt6svg6-dev", latest)
+        self.assertNotIn("qt6-svg-plugins", jammy)
+        self.assertIn("qt6-svg-plugins", latest)
+
     def test_explicit_workflow_matches_every_declared_case(self) -> None:
         """Keep the visible workflow matrix aligned with the backend coverage contract."""
         module = driver()
         module.validate_workflow(module.load_cases())
+
+    def test_linux_endpoints_and_both_macos_architectures_are_declared(self) -> None:
+        """Require each Linux target on both LTS endpoints and independent Mac builds."""
+        module = driver()
+        cases = module.load_cases()
+        for case in cases:
+            if case.group in {"linux", "flatpak"}:
+                runners = {entry.runner for entry in cases
+                           if (entry.config, entry.target) == (case.config, case.target)}
+                self.assertEqual(runners, {"ubuntu-22.04", "ubuntu-26.04"})
+        for identity, architecture in (("qt-macos", "aarch64"), ("qt-macos-intel", "x86_64")):
+            case = next(entry for entry in cases if entry.id == identity)
+            config = module.load_config(ROOT / case.config)
+            target = next(entry for entry in config.targets if entry.name == case.target)
+            self.assertEqual(target.arch, architecture)
+            self.assertEqual(module.expected_formats(case), ("app.zip", "zip", "dmg"))
+
+    def test_wrong_runner_receipt_cannot_satisfy_another_lts(self) -> None:
+        """Reject otherwise complete evidence mislabeled with the other Linux runner."""
+        module = driver()
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {}, clear=True), patch.object(module, "publish_summary"):
+            directory = Path(temporary)
+            success_receipts(module, directory)
+            path = directory / "basic-appimage-lts-old.json"
+            value = json.loads(path.read_text(encoding="utf-8"))
+            value["runner"] = "ubuntu-26.04"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertFalse(module.report_results(module.load_cases(), directory))
 
     def test_unknown_workflow_case_is_rejected(self) -> None:
         """Reject a workflow edit that replaces a required case with an unknown one."""
@@ -85,11 +129,11 @@ class CIReportTests(unittest.TestCase):
             success_receipts(module, directory)
             self.assertTrue(module.report_results(
                 module.load_cases(), directory))
-            self.assertIn("14/14", summary.call_args.args[0])
+            self.assertIn("24/24", summary.call_args.args[0])
             (directory / "qt-macos.json").unlink()
             self.assertFalse(module.report_results(
                 module.load_cases(), directory))
-            self.assertIn("13/14", summary.call_args.args[0])
+            self.assertIn("23/24", summary.call_args.args[0])
             self.assertIn("MISSING", summary.call_args.args[0])
 
     def test_incomplete_native_formats_and_failed_launch_do_not_pass(self) -> None:
@@ -99,7 +143,7 @@ class CIReportTests(unittest.TestCase):
             directory = Path(temporary)
             success_receipts(module, directory)
             path = directory / "qt-windows.json"
-            value = {"case": "qt-windows", "status": "passed", "run_id": "local",
+            value = {"runner": "windows-latest", "case": "qt-windows", "status": "passed", "run_id": "local",
                      "run_attempt": "local", "commit": "local",
                      "artifacts": [{"format": "inno", "checksum": True, "launch": False}]}
             path.write_text(json.dumps(value), encoding="utf-8")
@@ -144,6 +188,19 @@ class CIReportTests(unittest.TestCase):
                 module.verify_archive(
                     artifact, root / "complete", "WIDGETS_DEPLOY_OK", "widgets-demo.exe")
                 command.assert_called_once()
+
+    def test_wayland_evidence_is_required_for_the_qt_appimage(self) -> None:
+        """Reject an offscreen-only receipt when the target promises Wayland support."""
+        module = driver()
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {}, clear=True), patch.object(module, "publish_summary"):
+            directory = Path(temporary)
+            success_receipts(module, directory)
+            path = directory / "qt-appimage.json"
+            value = {"runner": "ubuntu-26.04", "case": "qt-appimage", "status": "passed", "run_id": "local",
+                     "run_attempt": "local", "commit": "local",
+                     "artifacts": [{"format": "appimage", "checksum": True, "launch": True}]}
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertFalse(module.report_results(module.load_cases(), directory))
 
     def test_failed_case_writes_a_failure_receipt(self) -> None:
         """Retain a failed outcome when packaging raises before producing outputs."""

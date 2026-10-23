@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import tarfile
 from dataclasses import dataclass, replace
+import platform
 from pathlib import Path
 
 from ..core import BuildContext, PackageBackend, ProjectHooks, artifact
@@ -84,7 +85,8 @@ class ScriptBackend(PackageBackend):
         assert isinstance(opts, ScriptOptions)
         ctx.copy(opts.recipe, ".")
         for rule in ctx.target.resources:
-            ctx.copy(rule.source, rule.destination)
+            if not rule.platforms or (ctx.target.platform if ctx.target.platform != "any" else platform.system()) in rule.platforms:
+                ctx.copy(rule.source, rule.destination, exclude=rule.exclude)
         hooks.deploy(ctx)
 
     def package(self, ctx: BuildContext) -> tuple[Artifact, ...]:

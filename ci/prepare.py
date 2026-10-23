@@ -95,6 +95,21 @@ def prepare_tools() -> None:
     export_path(bin_dir)
 
 
+def linux_qt_packages(ubuntu_version: str) -> tuple[str, ...]:
+    """Select distro Qt dependencies using the release's SVG package name.
+
+    Args:
+        ubuntu_version: VERSION_ID read from the Ubuntu runner's os-release.
+
+    Returns:
+        Apt package names for the Qt Widgets, translation, SVG, and Wayland fixture.
+    """
+    # Jammy ships SVG plugins inside libqt6svg6, pulled in by its development package.
+    svg = ("libqt6svg6-dev",) if ubuntu_version == "22.04" else ("qt6-svg-dev", "qt6-svg-plugins")
+    return ("cmake", "ninja-build", "qt6-base-dev", "qt6-tools-dev",
+            "qt6-tools-dev-tools", "qt6-wayland", *svg)
+
+
 def main() -> None:
     """Prepare dependencies for a named CI group or only download local tools.
 
@@ -116,7 +131,11 @@ def main() -> None:
     if arguments.group == "linux":
         run(["sudo", "apt-get", "update"])
         run(["sudo", "apt-get", "install", "-y", "build-essential", "desktop-file-utils", "dpkg-dev",
-             "libgl1", "libegl1", "libxkbcommon-x11-0", "libxcb-cursor0"])
+             "libgl1", "libegl1", "libxkbcommon-x11-0", "libxcb-cursor0", "weston"])
+        if os.environ.get("EXAMPLE_QT") == "true":
+            # Distro Qt preserves the runner's glibc baseline, including Jammy.
+            version = platform.freedesktop_os_release().get("VERSION_ID", "")
+            run(["sudo", "apt-get", "install", "-y", *linux_qt_packages(version)])
         prepare_tools()
     elif arguments.group == "flatpak":
         run(["sudo", "apt-get", "update"])

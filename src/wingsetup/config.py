@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from .model import Application, BackendOptions, Config, CopyRule, Project, SetupError, Target
-from .validation import ConfigPaths, fields, mapping, read_yaml, sequence, string, strings
+from .validation import ConfigPaths, fields, mapping, read_yaml, sequence, string, strings, patterns
 from .platforms import normalize_arch
 
 
@@ -70,14 +70,18 @@ def load_config(path: Path) -> Config:
         resources: list[CopyRule] = []
         for item in sequence(value, "resources"):
             rule = mapping(item, "resource")
-            fields(rule, "source destination relative_to", "resource")
+            fields(rule, "source destination relative_to platforms exclude", "resource")
             dest = string(rule.get("destination"), "resource.destination")
             if Path(dest).is_absolute() or ".." in Path(dest).parts:
                 raise SetupError("resource.destination must stay inside deployment directory")
             relative_to = rule.get("relative_to", "root")
             if relative_to not in ("root", "prefix", "app", "resources", "libraries", "plugins"):
                 raise SetupError("resource.relative_to must be root, prefix, app, resources, libraries or plugins")
-            resources.append(CopyRule(resolve(rule.get("source"), "resource.source"), dest, relative_to))
+            platforms = strings(rule.get("platforms", []), "resource.platforms")
+            if set(platforms) - {"Linux", "Windows", "Darwin"}:
+                raise SetupError("resource.platforms must contain Linux, Windows, or Darwin")
+            resources.append(CopyRule(resolve(rule.get("source"), "resource.source"), dest, relative_to,
+                                      platforms, patterns(rule.get("exclude", []), "resource.exclude")))
         return tuple(resources)
 
     resources = parse_resources(project.get("resources", []))
@@ -90,7 +94,7 @@ def load_config(path: Path) -> Config:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", name):
             raise SetupError(f"Invalid target name: {name}")
         target = mapping(value, f"targets.{name}")
-        fields(target, "backend arch options resources platform executable tools", name)
+        fields(target, "backend arch options resources platform executable tools exclude", name)
         backend = string(target.get("backend"), f"{name}.backend")
         import platform as host_platform
         arch = normalize_arch(string(target.get("arch", host_platform.machine()), f"{name}.arch"))
@@ -118,7 +122,8 @@ def load_config(path: Path) -> Config:
         targets.append(Target(name, backend, arch, options, parse_resources(target.get("resources", [])),
                               target_platform, None if override is None else resolve(override, "target.executable"),
                               spec.layout if spec else "portable",
-                              tuple(paths.tool(value, "target.tools") for value in strings(target.get("tools", []), "target.tools"))))
+                              tuple(paths.tool(value, "target.tools") for value in strings(target.get("tools", []), "target.tools")),
+                              patterns(target.get("exclude", []), "target.exclude")))
     if not targets:
         raise SetupError("At least one target is required")
     return Config(path, application, project_config, tuple(targets),

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import tarfile
 from dataclasses import dataclass, replace
+import platform
 from pathlib import Path
 
 from ..core import BuildContext, PackageBackend, ProjectHooks, artifact, tool_missing
@@ -100,7 +101,8 @@ class AurBackend(PackageBackend):
         ctx.copy(opts.recipe, ".")
         # Compiled common resources do not belong in an AUR recipe.
         for rule in ctx.target.resources:
-            ctx.copy(rule.source, rule.destination)
+            if not rule.platforms or (ctx.target.platform if ctx.target.platform != "any" else platform.system()) in rule.platforms:
+                ctx.copy(rule.source, rule.destination, exclude=rule.exclude)
         hooks.deploy(ctx)
         ctx.run(["bash", "-n", str(ctx.deploy_dir / "PKGBUILD")])
         if opts.generate_srcinfo:

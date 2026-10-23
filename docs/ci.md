@@ -108,12 +108,35 @@ tools on ephemeral runners. Local unprivileged dependencies should remain in the
 workspace. Archives preserve permissions and links; uploading loose .app or
 executable trees does not guarantee that downloaded files retain permissions.
 
-首批应用迁移矩阵使用 Ubuntu 24.04 x86_64 和 macos-latest Apple Silicon arm64。
-Intel/universal2 保留配置能力；Deepin V23/KDE Neon 需后续独立构建与运行验收。
+Linux 原生打包和 Flatpak 用例分别覆盖最新 LTS Ubuntu 26.04 与最老仍受标准支持的
+LTS Ubuntu 22.04。此选择依据 [Ubuntu 生命周期](https://ubuntu.com/about/release-cycle)，
+固定 runner 标签便于审阅；LTS 支持到期或新 LTS 发布后应更新清单与矩阵。
+macOS 分别使用 `macos-15` Apple Silicon arm64 和 `macos-15-intel` x86_64 原生 runner。
+无需本地 Apple 电脑；提交后由 GitHub runner 完成打包、签名校验和归档内程序启动测试。
 
-The initial application migration matrix uses Ubuntu 24.04 x86_64 and macos-latest
-Apple Silicon arm64. Intel/universal2 remain configurable. Deepin V23/KDE Neon
-require later independent build and launch validation.
+Native Linux and Flatpak cases run on both the newest LTS, Ubuntu 26.04, and the
+oldest LTS under standard support, Ubuntu 22.04, following the
+[Ubuntu lifecycle](https://ubuntu.com/about/release-cycle). Explicit runner labels
+make the policy reviewable; update the manifest and matrices when support expires
+or a new LTS arrives. macOS uses separate native `macos-15` Apple Silicon arm64 and
+`macos-15-intel` x86_64 runners. A local Apple computer is unnecessary: GitHub runners
+perform packaging, signature checks, and launches from the archives after submission.
+
+Linux Qt 示例使用各 Ubuntu 仓库的 Qt 开发包、Linguist、SVG 和 Wayland 模块，
+不向 Ubuntu 22.04 注入新 glibc 基线的 Qt 官方二进制。参见
+[Qt Linux 二进制兼容说明](https://doc.qt.io/qt-6.10/linux.html)。Flatpak 仍使用 manifest
+指定的 KDE 6.10 runtime/SDK，宿主 LTS 与沙箱 runtime 分别记录。
+两个基线各自构建并运行，不代表新版系统生成的包可以在旧 LTS 运行；发布兼容旧系统的包
+应在最老基线构建，再做跨版本启动验收。Deepin/KDE Neon 不在本矩阵中。
+
+The Linux Qt fixture uses each Ubuntu archive's Qt development packages, Linguist,
+SVG, and Wayland modules, avoiding newer-glibc Qt installer binaries on Ubuntu 22.04.
+See [Qt's Linux binary compatibility guidance](https://doc.qt.io/qt-6.10/linux.html).
+Flatpak retains the manifest's KDE 6.10 runtime/SDK; host LTS and sandbox runtime are
+separate baselines. Each endpoint builds and runs independently: packages built on
+a newer system are not thereby compatible with the older LTS. Build releases for
+older systems on the oldest baseline and perform cross-version launch acceptance.
+Deepin/KDE Neon are outside this matrix.
 
 ## 示例测试基准 / Example test baseline
 
@@ -126,10 +149,10 @@ built-in backends, then publishes the planned coverage table. See [.github/READM
 
 | 测试组 / Group | 示例及产物 / Examples and outputs |
 | --- | --- |
-| Linux / Ubuntu 24.04 | basic AppImage、deb、Makeself .run/.sh、自定义 tar；Qt Widgets AppImage / basic AppImage, deb, Makeself .run/.sh, custom tar; Qt Widgets AppImage |
-| Flatpak / Ubuntu 24.04 | basic binary、basic SDK、Qt Widgets SDK / basic binary, basic SDK, Qt Widgets SDK |
+| Linux / Ubuntu 22.04 + 26.04 | basic AppImage、deb、Makeself .run/.sh、自定义 tar；Qt Widgets AppImage / basic AppImage, deb, Makeself .run/.sh, custom tar; Qt Widgets AppImage |
+| Flatpak / Ubuntu 22.04 + 26.04 | basic binary、basic SDK、Qt Widgets SDK / basic binary, basic SDK, Qt Widgets SDK |
 | Windows x86_64 | Qt Widgets Inno .exe 与便携 ZIP / Qt Widgets Inno .exe and portable ZIP |
-| macOS arm64 | Qt Widgets .app.zip、ZIP、DMG / Qt Widgets .app.zip, ZIP, DMG |
+| macOS arm64 + Intel x86_64 | Qt Widgets .app.zip、ZIP、DMG / Qt Widgets .app.zip, ZIP, DMG |
 | Arch 容器 / container | basic AUR release/-git 配方及 Python/shell 管理脚本归档 / basic AUR release/-git recipes and Python/shell management archive |
 
 每个包都检查 SHA-256 和 sidecar；可启动载荷从生成包解出后运行，AppImage 使用无 FUSE
@@ -147,12 +170,12 @@ or building .pkg.tar.zst packages.
 
 Qt 启动测试移除宿主 Qt 插件和库环境变量，并从 PATH 排除 Qt SDK，检查翻译、资源、
 动态插件及私有库。每个目标输出 validation.json，成功仅表示所记录的检查完成。
-凭据相关的 Developer ID、公证以及 Intel/universal2 不属于首批公共 CI 的实际运行矩阵。
+凭据相关的 Developer ID、公证以及 universal2 不属于公共 CI 的实际运行矩阵。
 
 Qt launch tests remove host Qt plugin/library overrides and exclude the Qt SDK
 from PATH, then verify translations, resources, dynamic plugins, and private
 libraries. Each target emits validation.json recording completed checks. Developer
-ID signing, notarization, and Intel/universal2 are outside the initial public
+ID signing, notarization, and universal2 are outside the public
 CI execution matrix.
 
 Python 环境准备统一为 `ci/environment.py`，包依赖只安装在 `.venv-ci`。Linux 工具由
@@ -168,12 +191,12 @@ without installing system dependencies.
 
 示例工作流最后的 `all-examples` job 收集每个用例上传的小型执行记录，Summary 逐项
 显示状态、产物格式、SHA-256 和启动结果。缺失、失败、记录过期或产物格式不全均失败；
-只有本次 run/attempt/commit 的 14/14 用例及其前置任务全部成功才通过。该 job
+只有本次 run/attempt/commit 的 24/24 用例及其前置任务全部成功才通过。该 job
 不下载所有大型安装包，也不根据“配置存在”推断测试通过。可将其加入分支保护。
 
 The example workflow's final `all-examples` job collects small execution receipts
 and summarizes each case's status, output formats, SHA-256 checks, and launches.
-Missing, failed, stale, or incomplete evidence fails acceptance. Only 14/14 cases
+Missing, failed, stale, or incomplete evidence fails acceptance. Only 24/24 cases
 from the current run/attempt/commit, together with successful prerequisite jobs,
 pass. The job does not download every large package or infer success from the
 presence of configuration. It can serve as a required branch-protection check.
@@ -183,3 +206,26 @@ presence of configuration. It can serve as a required branch-protection check.
 Receipt collection uses filtering and merging from
 [actions/download-artifact](https://github.com/actions/download-artifact). Remote
 execution is still required to validate the workflow end to end.
+
+Qt AppImage 现在同时要求 offscreen 和实际 Wayland 启动。Linux CI 显式准备 qtwayland
+模块和 headless Weston，使用独立运行目录及私有 socket；任何 Wayland 启动失败或
+执行记录缺少 wayland=true，最终汇总均失败。它验证 Wayland 客户端启动，不等同于所有
+GPU、桌面合成器或输入法的兼容性矩阵。
+
+Qt AppImage now requires both offscreen and actual Wayland launches. Linux CI
+prepares the distro Qt Wayland module and headless Weston, using a private runtime
+directory and socket. A failed launch or missing wayland=true evidence fails
+final aggregation. This verifies Wayland client startup rather than every GPU,
+desktop compositor, or input-method combination.
+
+Ubuntu 22.04 的 SVG 开发包为 `libqt6svg6-dev`，26.04 使用 `qt6-svg-dev`；
+准备脚本读取 runner 的 `/etc/os-release` 选择包名。22.04 的插件随 `libqt6svg6` 提供，
+26.04 显式安装独立的 `qt6-svg-plugins` 包。
+测试比较配置文件路径时使用解析后的规范路径，兼容 macOS `/var` 到 `/private/var`
+和 Windows 临时目录别名。
+
+Ubuntu 22.04 names the SVG development package `libqt6svg6-dev`, while 26.04 uses
+`qt6-svg-dev`. Provisioning selects the name from the runner's `/etc/os-release`. Jammy includes
+SVG plugins in `libqt6svg6`; 26.04 installs the separate `qt6-svg-plugins` package. Tests compare resolved
+configuration paths, accommodating macOS `/var` to `/private/var` and Windows
+temporary-directory aliases.

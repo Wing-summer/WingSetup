@@ -37,18 +37,20 @@ compatibility and additional dependencies.
 
 ## Windows / macOS
 
-配置还包含 windows 和 macos 目标，必须在对应原生系统运行。CMake 为 Windows 安装
-DLL/插件，在 macOS 生成 .app，数据放入 Contents/Resources、业务插件放入 Contents/PlugIns。配置中的 macOS 目标默认 aarch64；
-Intel 用户需修改 arch 并使用匹配工具链。当前 Linux 验收不代表这两个原生目标已通过 CI。
+配置还包含 windows、macos 和 macos-intel 目标，必须在对应原生系统运行。CMake 为 Windows 安装
+DLL/插件，在 macOS 生成 .app，数据放入 Contents/Resources、业务插件放入 Contents/PlugIns。macos 目标为 aarch64，macos-intel 为 x86_64，各自在匹配的 GitHub macOS runner 构建和启动验证。
+无需本地 Mac；原生验证结果以对应 Actions 用例实际执行记录为准。
 
-The configuration also includes windows and macos targets requiring their native
+The configuration also includes windows, macos, and macos-intel targets requiring their native
 OS. CMake installs DLLs/plugins on Windows and builds a .app using Contents/Resources for data and Contents/PlugIns for business
-plugins on macOS. The macOS target defaults to aarch64; Intel users must adjust
-arch and toolchain. Linux validation does not imply these native targets passed CI.
+plugins on macOS. The macos target uses aarch64 and macos-intel uses x86_64. Separate matching GitHub
+macOS runners build and launch both. No local Mac is required; actual Actions
+receipts establish native validation.
 
 ```sh
 wingsetup run -c examples/qtwidgets/package.yml --target windows
 wingsetup run -c examples/qtwidgets/package.yml --target macos
+wingsetup run -c examples/qtwidgets/package.yml --target macos-intel
 ```
 
 Windows 的 windeployqt 显式包含 qwindows/qoffscreen；启动前验证归档携带 offscreen 插件，
@@ -59,3 +61,18 @@ Windows deployment explicitly includes qwindows/qoffscreen. Archive checks requi
 the offscreen plugin without borrowing host Qt. macOS code directories contain
 no .qm, JSON, or script resources, following bundle signing rules. Smoke tests
 exercise the Qt event loop without showing a window; timeouts retain plugin diagnostics.
+
+AppImage 显式启用 xcb、wayland、offscreen。Qt SDK 需包含匹配的 Wayland 模块；
+Windows 示例展示安装目录、权限、发布者与 Inno 专属排除。完整字段见
+[平台定制](../../docs/usage.md)。
+
+AppImage explicitly enables xcb, wayland, and offscreen; prepare the matching Qt
+Wayland SDK module. Windows demonstrates installation directory, privileges,
+publisher, and installer-only exclusions. See [platform customization](../../docs/usage.md).
+
+Linux CI 分别使用 Ubuntu 22.04 与 26.04 的发行版 Qt，包含 Wayland、SVG 和翻译工具。
+两个 LTS 分别构建并启动验证，不能据此推断新版构建产物兼容旧版 glibc。
+
+Linux CI uses distro Qt on Ubuntu 22.04 and 26.04, including Wayland, SVG, and
+translation tools. Both LTS endpoints build and launch independently; this does
+not imply that newer-system artifacts work with an older glibc.

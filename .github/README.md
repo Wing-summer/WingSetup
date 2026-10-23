@@ -26,11 +26,11 @@ execution; workflow linting is not a substitute.
 
 ## 如何确认全部测试 / How to confirm complete coverage
 
-打开 `workflows/examples.yml` 即可看到全部用例：linux 6 个、flatpak 3 个、native 2 个、
+打开 `workflows/examples.yml` 即可看到全部用例：linux 12 个、flatpak 6 个、native 3 个、
 recipes 3 个。AUR release、AUR git、脚本导出是三个独立的矩阵任务，不再隐藏在单个组内。
 覆盖检查会对照 `ci/examples.json` 和全部示例目标，拒绝漏项、重复项或错误 runner。
 
-`workflows/examples.yml` lists every case: six linux, three flatpak, two native,
+`workflows/examples.yml` lists every case: 12 linux, six flatpak, three native,
 and three recipes. AUR release, AUR git, and script export are separate matrix
 jobs rather than hidden group members. Coverage checks compare these matrices
 with `ci/examples.json` and all configured targets, rejecting omissions, duplicates,
@@ -45,20 +45,36 @@ GitHub Actions Summary contains two tables:
    同时列出校验与启动结果。
    Shows PASS, FAIL, MISSING, or INVALID for each case, including checksum and launch evidence.
 
-最后的 **All 14 example cases passed** job 始终执行汇总，必须收齐本次 run/attempt/commit
-的 14 份成功记录，全部预期格式和必需启动检查均通过，前置 job 也全部成功才会变绿。
+最后的 **All 24 example cases passed** job 始终执行汇总，必须收齐本次 run/attempt/commit
+的 24 份成功记录，全部预期格式和必需启动检查均通过，前置 job 也全部成功才会变绿。
 准备工具失败、取消或跳过导致的缺失记录不会被当作通过。分支保护可要求这一检查。
 
-The final **All 14 example cases passed** job always aggregates results. It requires
-14 successful receipts matching the current run, attempt, and commit, all expected
+The final **All 24 example cases passed** job always aggregates results. It requires
+24 successful receipts matching the current run, attempt, and commit, all expected
 formats and required launches, and successful prerequisite jobs. Missing evidence
 from provisioning failure, cancellation, or skipping cannot count as passed. This
 check can be required by branch protection.
 
-安装器入口、Apple Developer ID、公证、Intel/universal2 仍不在该基准中。Inno 的启动
+安装器入口、Apple Developer ID、公证、universal2 仍不在该基准中。Inno 的启动
 检查来自同次部署的 ZIP，AUR/管理脚本验证导出内容，不执行安装或源码构建。
 
-Installer execution, Apple Developer ID signing, notarization, and Intel/universal2
+Installer execution, Apple Developer ID signing, notarization, and universal2
 remain outside this baseline. Inno launch checks use the ZIP from the same staged
 payload. AUR and management-script checks validate exported content without
 installation or source compilation.
+
+Linux 与 Flatpak 的每个目标分别在 Ubuntu 22.04、26.04 执行，产物及记录名称互不覆盖。
+macOS arm64 (`macos-15`) 与 Intel (`macos-15-intel`) 分别打包和启动全部三种归档格式。
+Qt AppImage 两个 LTS 用例均须通过 offscreen 与私有 Weston Wayland 启动。
+
+Every Linux and Flatpak target runs on Ubuntu 22.04 and 26.04, with distinct artifact
+and receipt names. Separate macOS arm64 (`macos-15`) and Intel (`macos-15-intel`) jobs
+package and launch all three archive formats. Both Qt AppImage LTS cases require
+offscreen and private Weston Wayland launches.
+
+`actionlint.yaml` 补充旧版 actionlint 尚未收录的官方 `ubuntu-26.04` 标签，
+不把工作流改为自托管 runner，也不关闭其他标签检查。
+
+`actionlint.yaml` supplements older actionlint catalogs with the official
+`ubuntu-26.04` label; it neither switches workflows to self-hosted execution nor
+disables checks for other labels.

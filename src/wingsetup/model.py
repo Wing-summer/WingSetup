@@ -47,6 +47,10 @@ class CopyRule:
     destination: str
     #: Logical deployment location used as the destination base.
     relative_to: Literal["root", "prefix", "app", "resources", "libraries", "plugins"] = "root"
+    #: Optional host-platform allowlist for this resource, independent of source presence.
+    platforms: tuple[str, ...] = ()
+    #: Source-relative glob patterns omitted while recursively copying this resource.
+    exclude: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,6 +91,10 @@ class AppImageOptions(BackendOptions):
     dependency_dirs: tuple[str, ...] = ()
     #: Optional predownloaded AppImage runtime passed to appimagetool.
     runtime_file: Path | None = None
+    #: Explicit Qt platform backends to bundle: xcb, wayland, and offscreen.
+    qt_platforms: tuple[str, ...] = ()
+    #: Shared-library glob patterns passed to linuxdeploy's dependency exclusion option.
+    exclude_libraries: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -133,6 +141,8 @@ class Target:
     layout: str = ""
     #: Additional required tools checked even for SDK and recipe targets.
     tools: tuple[str, ...] = ()
+    #: Deployment-root-relative patterns removed before packaging and final signing.
+    exclude: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,10 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+# GitHub documents ubuntu-26.04 as hosted; older actionlint catalogs lack it.
+# This extends lint recognition only and does not select self-hosted execution.
+# https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04

@@ -119,3 +119,33 @@ These results do not establish execution on an Ubuntu 24.04 runner. Windows
 Inno/ZIP and macOS app/ZIP/DMG belong to the manifest but have not run remotely.
 Installer entry points were not executed. Apple credentials, notarization, and
 Intel/universal2 remain outside this real validation.
+
+## Wayland 与配置扩展验证 / Wayland and configuration extension validation
+
+2026-10-23：新 Qt AppImage 已在本机现有 Wayland 会话与 offscreen 平台运行，两次均输出
+完整 WIDGETS_DEPLOY_OK。运行时清除了宿主 LD_LIBRARY_PATH/QT_PLUGIN_PATH，产物包含
+Qt Wayland QPA、客户端集成插件及收集到的依赖。此次本机未安装 Weston；GitHub 的独立
+headless Weston 路径仍需下次 CI 执行。Inno/macOS 新配置通过模拟工具回归验证，
+不声称已经在原生系统编译和运行全部新选项。
+
+2026-10-23: The new Qt AppImage ran in the existing local Wayland session and with
+offscreen; both produced the complete WIDGETS_DEPLOY_OK marker. Host
+LD_LIBRARY_PATH/QT_PLUGIN_PATH overrides were cleared. The artifact contains Qt
+Wayland QPA, client integration plugins, and collected dependencies. Weston was
+not installed locally; the isolated GitHub headless path still needs its next CI
+run. New Inno/macOS settings passed mocked-tool regressions, without claiming
+complete native compilation and execution of every new option.
+
+## Intel 与双 LTS 矩阵 / Intel and dual-LTS matrix
+
+当前计划矩阵为 24 个示例用例：Linux 12、Flatpak 6、原生 Windows/macOS 3、配方 3。
+新增 macos-intel 目标与 Ubuntu 22.04/26.04 两端验证；本地 Arch 只执行静态检查与单元测试，
+新增 runner 的原生打包、Wayland、签名与 DMG 启动结果仍以 GitHub Actions 实际记录为准。
+前面的日期记录描述当时的验证范围，不表示新增矩阵已执行。
+
+The current plan contains 24 example cases: 12 Linux, six Flatpak, three native
+Windows/macOS, and three recipes. It adds macos-intel and both Ubuntu 22.04/26.04
+endpoints. Local Arch checks cover static validation and unit tests; actual GitHub
+Actions receipts must establish packaging, Wayland, signing, and DMG launches on
+the new runners. Earlier dated records retain their historical verification scope
+and do not claim execution of the expanded matrix.

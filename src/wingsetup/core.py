@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 import sys
 import traceback
+import platform
 from abc import ABC, abstractmethod
 from threading import Event, Thread
 from time import monotonic
@@ -25,6 +26,7 @@ from typing import Mapping, Sequence, TypeVar, cast
 
 from .model import Artifact, Config, FlatpakOptions, SetupError, Target
 from .console import get_console, plain_text
+from .filtering import filter_deployment, matches
 from .platforms import DeploymentLayout, deployment_layout
 from .script_paths import activate_paths
 
@@ -237,7 +239,7 @@ class BuildContext:
             expanded.append(arg)
         return self.runner.run(expanded, cwd=cwd or self.source_dir, env=env)
 
-    def copy(self, source: Path, destination: str) -> None:
+    def copy(self, source: Path, destination: str, *, exclude: tuple[str, ...] = ()) -> None:
         """Copy content into the deployment tree.
 
         Copy content into the deployment tree while rejecting escaping destinations.
@@ -247,6 +249,7 @@ class BuildContext:
                 expanded.
             destination: Relative copy destination inside the selected deployment
                 location.
+            exclude: Source-relative patterns omitted from a recursive directory copy.
 
         Raises:
             SetupError: The source is missing or the destination escapes the tree or
@@ -267,7 +270,18 @@ class BuildContext:
             raise SetupError(f"Copy destination contains symlinks: {dest}")
         if source.is_dir():
             # Dereference source symlinks, so deployment cannot retain external links.
-            shutil.copytree(source, dest, dirs_exist_ok=True)
+            def ignored(directory: str, names: list[str]) -> set[str]:
+                """Select source children omitted from the current recursive copy.
+
+                Args:
+                    directory: Source directory currently visited by shutil.
+                    names: Immediate child names considered for copying.
+
+                Returns:
+                    Child names matching the resource-relative exclusion patterns.
+                """
+                return {name for name in names if matches((Path(directory) / name).relative_to(source).as_posix(), exclude)}
+            shutil.copytree(source, dest, dirs_exist_ok=True, ignore=ignored if exclude else None)
         else:
             shutil.copy2(source, dest)
         console.write(f"    COPIED {destination} ({console.elapsed(started)})", "detail")
@@ -438,11 +452,14 @@ def deploy_resources(ctx: BuildContext) -> None:
         ctx: Target-local configuration, paths, and command execution services.
     """
     for rule in (*ctx.config.project.resources, *ctx.target.resources):
+        if rule.platforms and (ctx.target.platform or platform.system()) not in rule.platforms:
+            get_console().write(f"    SKIP resource for this platform: {rule.source}", "detail")
+            continue
         base = {"root": ctx.deploy_dir, "prefix": ctx.prefix_dir, "app": ctx.app_dir,
                 "resources": ctx.layout.resources, "libraries": ctx.layout.libraries,
                 "plugins": ctx.layout.plugins}[rule.relative_to]
         destination = str(base.relative_to(ctx.deploy_dir) / rule.destination)
-        ctx.copy(rule.source, destination)
+        ctx.copy(rule.source, destination, exclude=rule.exclude)
 
 
 def artifact(ctx: BuildContext, path: Path, format_name: str) -> Artifact:
@@ -582,6 +599,7 @@ def run_target(config: Config, target: Target,
                     backend.deploy(ctx, hooks)
                 else:
                     (config.output / target.name).mkdir(parents=True, exist_ok=True)
+                    filter_deployment(ctx)
                     result = backend.package(ctx)
                 action = f"after_{stage}"
                 console.write(f"    HOOK {action}", "detail")

@@ -336,3 +336,138 @@ Project hooks can import `get_console` from wingsetup and call
 `get_console().write("Deploying private plugins", "info")` for application-specific
 progress under the same CLI color policy. Keep status messages separate from
 command return values that other code parses.
+
+## 平台定制与排除 / Platform customization and exclusions
+
+AppImage 的 Qt 平台现为显式配置。wayland 会从 QMAKE 对应的 SDK 查找 libqwayland*.so，
+并部署客户端 shell、图形及装饰集成插件，再扫描 ELF 依赖。支持不同 Qt 6 版本的平台
+文件名变化，不要求用户手写 libqwayland-generic.so 等固定名称。构建 SDK 必须已安装
+匹配的 Qt Wayland 模块。此选项不强制应用总是使用 Wayland，运行时仍由 Qt/环境选择。
+
+AppImage Qt platforms are explicit. wayland locates libqwayland*.so in the SDK
+selected by QMAKE, deploys client shell/graphics/decoration integration plugins,
+and scans ELF dependencies. This accommodates Qt 6 platform filename changes
+without hard-coding libqwayland-generic.so. Prepare the matching Qt Wayland SDK
+module first. Bundling does not force Wayland at runtime; Qt/environment selection
+still applies.
+
+```yaml
+targets:
+  appimage:
+    backend: appimage
+    arch: x86_64
+    exclude: ['**/*.pdb', '**/*.a']
+    options:
+      plugins: [qt]
+      qt_platforms: [xcb, wayland, offscreen]
+      environment:
+        QMAKE: qmake6
+      exclude_libraries: ['libexample-system-only.so*']
+```
+
+exclude_libraries 作为 --exclude-library 传给 linuxdeploy；它不是 ABI 验证或平台保证，
+应只排除目标系统承诺提供的库。不要随意排除 QtWaylandClient 或必需集成插件。
+官方 Qt 插件仍可通过 environment 配置其他模块、QML 搜索等高级行为，参见
+[linuxdeploy Qt 插件](https://github.com/linuxdeploy/linuxdeploy-plugin-qt)。
+
+exclude_libraries passes --exclude-library to linuxdeploy. It does not validate ABI
+or guarantee platform compatibility; exclude only libraries guaranteed by the
+target system. Do not remove QtWaylandClient or required integration plugins.
+The environment mapping remains available for advanced module and QML settings;
+see the [linuxdeploy Qt plugin](https://github.com/linuxdeploy/linuxdeploy-plugin-qt).
+
+资源规则支持 platforms 和 exclude。platforms 使用 Linux/Windows/Darwin；省略时应用于
+所有平台。不匹配时在读取源文件之前跳过，因此公共 YAML 可以引用其他系统才有的资源。
+资源 exclude 只在该规则的目录复制时生效，以源目录为基准；不会删除已有目标文件。
+
+Resource rules support platforms and exclude. Platforms use Linux/Windows/Darwin;
+omission applies everywhere. Unmatched rules skip before source access, allowing
+shared YAML to reference platform-specific files. Resource exclude filters only
+that directory copy relative to its source and does not remove existing destinations.
+
+```yaml
+project:
+  resources:
+    - source: assets/windows
+      destination: assets
+      relative_to: app
+      platforms: [Windows]
+      exclude: ['cache', '*.tmp']
+targets:
+  windows:
+    backend: inno
+    platform: Windows
+    arch: x86_64
+    exclude: ['**/*.pdb', '**/*.a']
+    options:
+      formats: [zip, inno]
+      setup_icon: assets/setup.ico
+      default_dir: '{autopf}\MyApplication'
+      privileges: admin
+      app_id: org.example.StableInstaller
+      desktop_shortcut: true
+      file_excludes: ['*.log']
+      setup:
+        AppPublisher: Example
+        WizardStyle: modern
+        UsePreviousAppDir: 'yes'
+        LicenseFile: LICENSE
+```
+
+以上是字段示意，应合并到完整配置并提供真实 .ico。安装目录是 Inno 常量表达式，
+不相对 YAML 转为宿主路径；图标、LicenseFile 等编译输入则相对 YAML。默认仍是最低
+权限和用户目录。改目录不会自动提权，privileges 必须显式选择 lowest/admin。setup 的
+值必须为字符串，yes/no 应加引号。常用默认模板值通过独立字段控制，setup 不允许覆盖
+这些字段或输出目录、架构；其余原生 [Setup] 指令由 Inno 编译器校验。
+
+This is a field illustration to merge into a complete configuration with a real
+.ico. Installation directories are Inno constant expressions, not host paths
+resolved against YAML. Compiler inputs such as icons and LicenseFile are relative
+to YAML. Defaults remain lowest privileges and a user directory. Changing the
+directory does not elevate privileges; explicitly choose lowest/admin. Setup
+values must be strings, including quoted yes/no. Managed options, output paths,
+and architecture cannot be overridden through setup. Inno validates other native
+[Setup] directive names and values.
+
+自定义 ISS 若同时使用这些安装选项，必须在 [Setup] 内加入 @SETUP_DIRECTIVES@，
+否则框架报错而非忽略。该占位符插入完整的受控设置，不应再重复 AppId 等指令。
+模板自行管理 [Files]/[Icons]，不能同时设置 file_excludes/desktop_shortcut。原有
+@PAYLOAD@ 等占位符保留。图标与目录语义参见
+[SetupIconFile](https://jrsoftware.org/ishelp/topic_setup_setupiconfile.htm)、
+[DefaultDirName](https://jrsoftware.org/ishelp/topic_setup_defaultdirname.htm)。
+
+A custom ISS consuming typed installer options must include @SETUP_DIRECTIVES@
+inside [Setup], or the framework fails instead of silently ignoring them. The
+placeholder inserts complete managed settings; do not duplicate AppId and similar
+directives. Custom templates own [Files]/[Icons] and cannot also set file_excludes
+or desktop_shortcut. Existing placeholders such as @PAYLOAD@ remain supported.
+See [SetupIconFile](https://jrsoftware.org/ishelp/topic_setup_setupiconfile.htm)
+and [DefaultDirName](https://jrsoftware.org/ishelp/topic_setup_defaultdirname.htm).
+
+| 配置 / Setting | 生效范围与时机 / Scope and timing |
+| --- | --- |
+| resource.platforms / resource.exclude | 平台筛选与单次资源复制 / Platform selection and individual resource copying |
+| target.exclude | 以暂存部署根为基准，pre_package 后、最终签名和产物生成前删除匹配项 / Relative to deployment root, after pre_package and before final signing/package generation |
+| inno.file_excludes | 原生 Inno [Files] 规则，仅影响安装器，不影响 ZIP / Native Inno [Files] filter affecting only the installer, not ZIP |
+| appimage.exclude_libraries | linuxdeploy 依赖收集 / linuxdeploy dependency collection |
+| inno.qt_args / macos.qt_args | windeployqt/macdeployqt 选项，如排除插件类型 / Native Qt tool options such as plugin exclusions |
+| flatpak SDK manifest cleanup | SDK 的部署清理，由 manifest 管理 / SDK cleanup owned by its manifest |
+
+排除 glob 使用 / 分隔、区分大小写：*.pdb 匹配任意深度的文件名，**/*.pdb 也匹配根目录。
+目录名匹配时省略/删除整个目录；不允许绝对路径、反斜杠和 ..。target.exclude 不跟随链接
+删除外部内容，并拒绝删除入口、AppRun 等必要文件；排除私有库仍需项目自行验证运行。
+macOS 在排除和 after_deploy 完成后执行最终签名，避免签名后修改内容。
+
+Globs use / separators and are case-sensitive. *.pdb matches basenames at any depth;
+**/*.pdb also matches root files. Selecting a directory omits/removes its whole
+tree. Absolute paths, backslashes, and .. are rejected. Target exclusion does not
+follow links to remove external contents and rejects required entries such as
+AppRun. Projects must still verify private-library exclusions. macOS final signing
+occurs after filtering and after_deploy, avoiding changes to already signed contents.
+
+macos.qt_args 不允许覆盖 -codesign、-sign-for-notarization、-no-codesign、
+-executable 或 -dmg；请使用专用签名、额外代码和 formats 选项，保持最终签名顺序。
+
+macos.qt_args cannot override -codesign, -sign-for-notarization, -no-codesign,
+-executable, or -dmg. Use the dedicated signing, extra-code, and formats settings
+to preserve final signing order.

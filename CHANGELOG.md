@@ -8,6 +8,12 @@ a version entry does not imply publication to a package index.
 
 ### Added / 新增
 
+- macOS Intel 独立打包目标与原生启动 CI，以及 Ubuntu 22.04/26.04 双 LTS 打包基准。
+  Separate macOS Intel packaging/native-launch CI and Ubuntu 22.04/26.04 LTS packaging baselines.
+
+- 显式 Qt Wayland 部署与实际启动验收、平台资源筛选及打包排除规则、Inno 安装器定制。
+  Explicit Qt Wayland deployment and launch validation, platform resource/output filters, and Inno installer customization.
+
 - 彩色目标与阶段进度、Hook/命令状态、耗时提示及适合 CI 的纯文本日志。
   Colored target/stage progress, hook/command status, elapsed-time updates, and CI-friendly plain logs.
 - YAML 配置的四阶段打包流水线、Python Hook、自定义后端和只读部署路径。

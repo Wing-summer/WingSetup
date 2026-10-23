@@ -33,6 +33,36 @@ def appimage_options(ctx: BuildContext) -> AppImageOptions:
     return options
 
 
+def deploy_qt_platforms(ctx: BuildContext, opts: AppImageOptions) -> None:
+    """Stage requested Qt QPA backends and Wayland client integration plugins.
+
+    Args:
+        ctx: AppDir context using the same Qt SDK as the compiled application.
+        opts: Requested Qt platforms and QMAKE override.
+
+    Raises:
+        SetupError: The selected Qt SDK lacks a requested platform backend.
+    """
+    if not opts.qt_platforms:
+        return
+    qmake = dict(opts.environment).get("QMAKE", "qmake")
+    root = Path(ctx.run([qmake, "-query", "QT_INSTALL_PLUGINS"]).strip())
+    if not root.is_absolute() or not root.is_dir():
+        raise SetupError("QMAKE returned an invalid QT_INSTALL_PLUGINS directory")
+    names = {"wayland": "libqwayland*.so", "xcb": "libqxcb.so", "offscreen": "libqoffscreen.so"}
+    for platform in opts.qt_platforms:
+        plugins = sorted((root / "platforms").glob(names[platform]))
+        if not plugins:
+            raise SetupError(f"Qt SDK is missing {platform} plugins under {root}; prepare the matching Qt module")
+        for plugin in plugins:
+            ctx.copy(plugin, f"usr/plugins/platforms/{plugin.name}")
+    if "wayland" in opts.qt_platforms:
+        for name in ("wayland-decoration-client", "wayland-graphics-integration-client", "wayland-shell-integration"):
+            directory = root / name
+            if directory.is_dir():
+                ctx.copy(directory, f"usr/plugins/{name}")
+
+
 class AppImageBackend(PackageBackend):
     """Deploy a relocatable AppDir, then convert it to an AppImage."""
 
@@ -56,6 +86,8 @@ class AppImageBackend(PackageBackend):
             errors.extend(tool_missing(f"linuxdeploy-plugin-{plugin}"))
         if opts.runtime_file is not None and not ctx.resolve_path(opts.runtime_file).is_file():
             errors.append(f"AppImage runtime file: {opts.runtime_file}")
+        if opts.qt_platforms:
+            errors.extend(tool_missing(dict(opts.environment).get("QMAKE", "qmake")))
         for library in opts.libraries:
             if "{build}" not in str(library) and not ctx.resolve_path(library).is_file():
                 errors.append(f"Library: {library}")
@@ -78,12 +110,17 @@ class AppImageBackend(PackageBackend):
         opts = appimage_options(ctx)
         app = ctx.config.application
         binary_deploy(ctx, hooks, "usr/")
+        deploy_qt_platforms(ctx, opts)
         desktop = ctx.deploy_dir / f"usr/share/applications/{app.id}.desktop"
         desktop_check(desktop, ctx.executable_name, app.id)
         ctx.run(["desktop-file-validate", str(desktop)])
         args = [opts.linuxdeploy, "--appdir", str(ctx.deploy_dir),
                 "--executable", str(ctx.deploy_dir / "usr/bin" / ctx.executable_name),
                 "--desktop-file", str(desktop), "--icon-file", str(app.icon)]
+        for pattern in opts.exclude_libraries:
+            args.extend(["--exclude-library", pattern])
+        if opts.qt_platforms:
+            args.extend(["--deploy-deps-only", str(ctx.prefix_dir / "plugins")])
         for plugin in opts.plugins:
             args.extend(["--plugin", plugin])
         for library in opts.libraries:
@@ -157,11 +194,16 @@ def parse_options(opts: dict[str, object], paths: ConfigPaths) -> AppImageOption
         SetupError: An option is unknown, has an invalid type, or violates backend
             constraints.
     """
-    fields(opts, "linuxdeploy appimagetool plugins libraries environment dependency_dirs runtime_file", "options")
+    fields(opts, "linuxdeploy appimagetool plugins libraries environment dependency_dirs runtime_file qt_platforms exclude_libraries", "options")
     environment = mapping(opts.get("environment", {}), "environment")
     dependency_dirs = strings(opts.get("dependency_dirs", []), "dependency_dirs")
     if any(Path(p).is_absolute() or ".." in Path(p).parts for p in dependency_dirs):
         raise SetupError("dependency_dirs must be relative to deployment root")
+    platforms = strings(opts.get("qt_platforms", []), "qt_platforms")
+    if set(platforms) - {"wayland", "xcb", "offscreen"}:
+        raise SetupError("qt_platforms must contain wayland, xcb, or offscreen")
+    if platforms and "qt" not in strings(opts.get("plugins", []), "plugins"):
+        raise SetupError("qt_platforms requires plugins: [qt]")
     options = AppImageOptions(
         paths.tool(opts.get("linuxdeploy", "linuxdeploy"), "linuxdeploy"),
         paths.tool(opts.get("appimagetool", "appimagetool"), "appimagetool"),
@@ -170,5 +212,6 @@ def parse_options(opts: dict[str, object], paths: ConfigPaths) -> AppImageOption
         tuple((key, string(value, f"environment.{key}")) for key, value in environment.items()),
         dependency_dirs,
         None if opts.get("runtime_file") is None else paths.resolve(opts["runtime_file"], "runtime_file"),
+        platforms, strings(opts.get("exclude_libraries", []), "exclude_libraries"),
     )
     return options

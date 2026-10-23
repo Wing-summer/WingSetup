@@ -4,7 +4,15 @@
     "config": "examples/basic/package.yml",
     "target": "appimage",
     "group": "linux",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-appimage-lts-old",
+    "config": "examples/basic/package.yml",
+    "target": "appimage",
+    "group": "linux",
+    "runner": "ubuntu-22.04",
     "qt": false
   },
   {
@@ -12,7 +20,15 @@
     "config": "examples/basic/package.yml",
     "target": "flatpak-binary",
     "group": "flatpak",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-flatpak-binary-lts-old",
+    "config": "examples/basic/package.yml",
+    "target": "flatpak-binary",
+    "group": "flatpak",
+    "runner": "ubuntu-22.04",
     "qt": false
   },
   {
@@ -20,7 +36,15 @@
     "config": "examples/basic/package.yml",
     "target": "flatpak-sdk",
     "group": "flatpak",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-flatpak-sdk-lts-old",
+    "config": "examples/basic/package.yml",
+    "target": "flatpak-sdk",
+    "group": "flatpak",
+    "runner": "ubuntu-22.04",
     "qt": false
   },
   {
@@ -28,7 +52,15 @@
     "config": "examples/basic/extended.yml",
     "target": "deb",
     "group": "linux",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-deb-lts-old",
+    "config": "examples/basic/extended.yml",
+    "target": "deb",
+    "group": "linux",
+    "runner": "ubuntu-22.04",
     "qt": false
   },
   {
@@ -36,7 +68,15 @@
     "config": "examples/basic/extended.yml",
     "target": "shell",
     "group": "linux",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-shell-lts-old",
+    "config": "examples/basic/extended.yml",
+    "target": "shell",
+    "group": "linux",
+    "runner": "ubuntu-22.04",
     "qt": false
   },
   {
@@ -44,7 +84,15 @@
     "config": "examples/basic/extended.yml",
     "target": "shell-sh",
     "group": "linux",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-shell-sh-lts-old",
+    "config": "examples/basic/extended.yml",
+    "target": "shell-sh",
+    "group": "linux",
+    "runner": "ubuntu-22.04",
     "qt": false
   },
   {
@@ -52,7 +100,15 @@
     "config": "examples/basic/extended.yml",
     "target": "archive",
     "group": "linux",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-archive-lts-old",
+    "config": "examples/basic/extended.yml",
+    "target": "archive",
+    "group": "linux",
+    "runner": "ubuntu-22.04",
     "qt": false
   },
   {
@@ -60,7 +116,7 @@
     "config": "examples/basic/extended.yml",
     "target": "aur-release",
     "group": "recipes",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
     "qt": false
   },
   {
@@ -68,7 +124,7 @@
     "config": "examples/basic/extended.yml",
     "target": "aur-git",
     "group": "recipes",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
     "qt": false
   },
   {
@@ -76,7 +132,7 @@
     "config": "examples/basic/extended.yml",
     "target": "scripts",
     "group": "recipes",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
     "qt": false
   },
   {
@@ -84,7 +140,15 @@
     "config": "examples/qtwidgets/package.yml",
     "target": "appimage",
     "group": "linux",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
+    "qt": true
+  },
+  {
+    "id": "qt-appimage-lts-old",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "appimage",
+    "group": "linux",
+    "runner": "ubuntu-22.04",
     "qt": true
   },
   {
@@ -92,7 +156,15 @@
     "config": "examples/qtwidgets/package.yml",
     "target": "flatpak-sdk",
     "group": "flatpak",
-    "runner": "ubuntu-24.04",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "qt-flatpak-sdk-lts-old",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "flatpak-sdk",
+    "group": "flatpak",
+    "runner": "ubuntu-22.04",
     "qt": false
   },
   {
@@ -108,7 +180,15 @@
     "config": "examples/qtwidgets/package.yml",
     "target": "macos",
     "group": "native",
-    "runner": "macos-latest",
+    "runner": "macos-15",
+    "qt": true
+  },
+  {
+    "id": "qt-macos-intel",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "macos-intel",
+    "group": "native",
+    "runner": "macos-15-intel",
     "qt": true
   }
 ]

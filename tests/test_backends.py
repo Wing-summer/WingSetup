@@ -10,6 +10,7 @@ import dataclasses
 import json
 import os
 import plistlib
+import zipfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,7 +26,11 @@ from wingsetup.backends.makeself import MakeselfBackend
 from wingsetup.backends.script import ScriptBackend
 from wingsetup.cli import main
 from wingsetup.config import load_config
-from wingsetup.core import check_requirements, run_target
+from wingsetup.core import check_requirements, run_target, deploy_resources
+from wingsetup.model import CopyRule
+from wingsetup.filtering import filter_deployment
+from wingsetup.backends.appimage import deploy_qt_platforms
+from wingsetup.model import AppImageOptions
 from wingsetup.platforms import deployment_layout, normalize_arch
 
 
@@ -301,12 +306,113 @@ targets:
         assert isinstance(ctx.target.options, MacOSOptions)
         opts = dataclasses.replace(ctx.target.options, extra_executables=("Contents/MacOS/plugin.wingplg",))
         ctx = dataclasses.replace(ctx, target=dataclasses.replace(ctx.target, arch="universal2", options=opts))
-        MacOSBackend().deploy(ctx, ProjectHooks())
-        codesign = [command for command in self.runner.commands if command[0] == "codesign"]
+        backend = MacOSBackend()
+        backend.deploy(ctx, ProjectHooks())
+        backend.package(ctx)
+        codesign = [command for command in self.runner.commands if command[0] == "codesign" and "--force" in command]
         self.assertEqual(len(codesign), 2)
         self.assertEqual(codesign[0][1:4], ("--force", "--sign", "-"))
         self.assertTrue(codesign[0][-1].endswith("plugin.wingplg"))
         self.assertNotIn("--timestamp", codesign[0])
+
+    def test_resource_platform_and_recursive_exclusions(self) -> None:
+        """Skip foreign resources before reading sources and omit matching children."""
+        ctx = self.context("deb", "      package_name: demo\n      maintainer: Example\n")
+        assets = self.root / "assets"
+        (assets / "cache").mkdir(parents=True)
+        (assets / "cache/secret.txt").write_text("exclude")
+        (assets / "debug.pdb").write_text("exclude")
+        (assets / "keep.txt").write_text("keep")
+        rules = (CopyRule(self.root / "absent", "foreign", platforms=("Windows",)),
+                 CopyRule(assets, "assets", exclude=("cache", "*.pdb")))
+        project = dataclasses.replace(ctx.config.project, resources=rules)
+        ctx = dataclasses.replace(ctx, config=dataclasses.replace(ctx.config, project=project))
+        deploy_resources(ctx)
+        self.assertTrue((ctx.deploy_dir / "assets/keep.txt").is_file())
+        self.assertFalse((ctx.deploy_dir / "assets/debug.pdb").exists())
+        self.assertFalse((ctx.deploy_dir / "assets/cache").exists())
+        self.assertFalse((ctx.deploy_dir / "foreign").exists())
+
+    def test_final_exclusions_reject_entry_removal_before_deleting(self) -> None:
+        """Prune generated payloads while preserving entry and traversal boundaries."""
+        ctx = self.context("deb", "      package_name: demo\n      maintainer: Example\n")
+        ctx.copy_app(self.root / "demo", "demo")
+        debug = ctx.app_dir / "debug.pdb"
+        debug.write_text("debug")
+        unsafe = dataclasses.replace(ctx, target=dataclasses.replace(ctx.target, exclude=("**",)))
+        with self.assertRaisesRegex(SetupError, "required entry"):
+            filter_deployment(unsafe)
+        self.assertTrue(debug.is_file())
+        filtered = dataclasses.replace(ctx, target=dataclasses.replace(ctx.target, exclude=("**/*.pdb",)))
+        filter_deployment(filtered)
+        self.assertFalse(debug.exists())
+        self.assertTrue((ctx.app_dir / "demo").is_file())
+        with self.assertRaises(SetupError):
+            self.context("deb", "      package_name: demo\n      maintainer: Example\n", extra="    exclude: ['../outside']\n")
+
+    def test_inno_customization_and_format_specific_exclusions(self) -> None:
+        """Render compiler settings without excluding debug files from portable ZIP."""
+        self.pe(self.root / "demo.exe")
+        (self.root / "setup.ico").write_bytes(b"compiler icon fixture")
+        ctx = self.context("inno", "      formats: [zip, inno]\n      setup_icon: setup.ico\n      default_dir: '{autopf}/Demo'\n      privileges: admin\n      app_id: stable-installer-id\n      setup: {AppPublisher: Example, WizardStyle: modern}\n      file_excludes: ['*.pdb']\n      desktop_shortcut: true\n", extra="    executable: demo.exe\n")
+        backend = InnoBackend()
+        backend.deploy(ctx, ProjectHooks())
+        (ctx.deploy_dir / "debug.pdb").write_text("debug")
+        result = backend.package(ctx)
+        script = (ctx.work / "installer.iss").read_text(encoding="utf-8-sig")
+        self.assertIn("DefaultDirName={autopf}/Demo", script)
+        self.assertIn("PrivilegesRequired=admin", script)
+        self.assertIn("AppId=stable-installer-id", script)
+        # Config paths are canonical even when macOS /var or Windows temp paths are aliases.
+        self.assertIn("SetupIconFile=" + str((self.root / "setup.ico").resolve()), script)
+        self.assertIn('Excludes: "*.pdb"', script)
+        self.assertIn("{autodesktop}", script)
+        with zipfile.ZipFile(result[0].path) as archive:
+            self.assertIn("debug.pdb", archive.namelist())
+
+    def test_custom_iss_cannot_silently_ignore_typed_settings(self) -> None:
+        """Require an explicit setup insertion point in project-owned templates."""
+        self.pe(self.root / "demo.exe")
+        (self.root / "custom.iss").write_text("[Setup]\nAppName=Custom\n")
+        ctx = self.context("inno", "      script: custom.iss\n      default_dir: '{autopf}/Demo'\n", extra="    executable: demo.exe\n")
+        backend = InnoBackend()
+        backend.deploy(ctx, ProjectHooks())
+        with self.assertRaisesRegex(SetupError, "SETUP_DIRECTIVES"):
+            backend.package(ctx)
+        with self.assertRaises(SetupError):
+            self.context("inno", "      setup: {OutputDir: override}\n")
+
+    def test_wayland_platforms_and_integration_dependencies_are_staged(self) -> None:
+        """Find Qt 6 platform variants from QMAKE and stage client integration types."""
+        qt = self.root / "qt"
+        (qt / "platforms").mkdir(parents=True)
+        (qt / "platforms/libqwayland.so").write_bytes(b"platform")
+        (qt / "wayland-shell-integration").mkdir()
+        (qt / "wayland-shell-integration/libxdg-shell.so").write_bytes(b"integration")
+        ctx = self.context("appimage", "      plugins: [qt]\n      qt_platforms: [wayland]\n")
+        assert isinstance(ctx.target.options, AppImageOptions)
+        with patch.object(self.runner, "run", return_value=str(qt)):
+            deploy_qt_platforms(ctx, ctx.target.options)
+        self.assertTrue((ctx.deploy_dir / "usr/plugins/platforms/libqwayland.so").is_file())
+        self.assertTrue((ctx.deploy_dir / "usr/plugins/wayland-shell-integration/libxdg-shell.so").is_file())
+        (qt / "platforms/libqwayland.so").unlink()
+        with patch.object(self.runner, "run", return_value=str(qt)):
+            with self.assertRaisesRegex(SetupError, "missing wayland"):
+                deploy_qt_platforms(ctx, ctx.target.options)
+
+    def test_macos_final_signing_occurs_after_payload_exclusions(self) -> None:
+        """Remove staged resources before signing the final bundle in package."""
+        ctx = self.mac_context()
+        resources = ctx.executable / "Contents/Resources"
+        resources.mkdir()
+        (resources / "unused.tmp").write_text("excluded")
+        target = dataclasses.replace(ctx.target, exclude=("**/*.tmp",))
+        with patch.object(MacOSBackend, "check", return_value=()):
+            run_target(ctx.config, target, self.runner)
+        roots = list(ctx.config.workspace.glob("test-*/root/Demo.app/Contents/Resources"))
+        self.assertEqual(len(roots), 1)
+        self.assertFalse((roots[0] / "unused.tmp").exists())
+        self.assertTrue(any(command[:2] == ("codesign", "--force") for command in self.runner.commands))
 
     def test_list_does_not_import_project_hooks(self) -> None:
         """Expose target discovery without importing user project hooks."""

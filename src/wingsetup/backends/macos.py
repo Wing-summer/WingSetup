@@ -35,6 +35,8 @@ class MacOSOptions(BackendOptions):
     sign_identity_env: str = ""
     #: Environment variable containing a preconfigured notarytool keychain profile.
     notary_profile_env: str = ""
+    #: Additional macdeployqt flags such as -no-plugins or -no-strip.
+    qt_args: tuple[str, ...] = ()
 
 
 def parse_options(data: dict[str, object], paths: ConfigPaths) -> MacOSOptions:
@@ -53,7 +55,7 @@ def parse_options(data: dict[str, object], paths: ConfigPaths) -> MacOSOptions:
         SetupError: An option is unknown, has an invalid type, or violates backend
             constraints.
     """
-    fields(data, "formats macdeployqt extra_executables sign_identity_env notary_profile_env", "macos")
+    fields(data, "formats macdeployqt extra_executables sign_identity_env notary_profile_env qt_args", "macos")
     formats = strings(data.get("formats", ["zip", "dmg"]), "formats")
     if not formats or len(set(formats)) != len(formats) or set(formats) - {"app", "zip", "dmg"}:
         raise SetupError("macOS formats must be a unique nonempty subset of app, zip, dmg")
@@ -61,9 +63,13 @@ def parse_options(data: dict[str, object], paths: ConfigPaths) -> MacOSOptions:
     notary = data.get("notary_profile_env", "")
     if not isinstance(sign, str) or not isinstance(notary, str) or (notary and not sign):
         raise SetupError("notary_profile_env requires sign_identity_env")
+    qt_args = strings(data.get("qt_args", []), "qt_args")
+    managed = ("-codesign", "-sign-for-notarization", "-no-codesign", "-executable", "-dmg")
+    if any(value.split("=", 1)[0] in managed for value in qt_args):
+        raise SetupError("macos.qt_args cannot override managed signing, executables, or output formats")
     return MacOSOptions(formats, paths.tool(data.get("macdeployqt", "macdeployqt"), "macdeployqt"),
                         tuple(relative_path(value) for value in strings(data.get("extra_executables", []), "extra_executables")),
-                        sign, notary)
+                        sign, notary, qt_args)
 
 
 def credential(name: str) -> str:
@@ -150,7 +156,7 @@ class MacOSBackend(PackageBackend):
         required = {"x86_64", "aarch64"} if ctx.target.arch == "universal2" else {ctx.target.arch}
         if not required.issubset({normalize_arch(value) for value in architectures}):
             raise SetupError("Mach-O architectures do not match the target")
-        args = [opts.macdeployqt, str(bundle), "-always-overwrite"]
+        args = [opts.macdeployqt, str(bundle), "-always-overwrite", *opts.qt_args]
         for name in opts.extra_executables:
             path = bundle / name
             if not path.is_file() or not path.resolve().is_relative_to(bundle.resolve()):
@@ -164,14 +170,6 @@ class MacOSBackend(PackageBackend):
         else:
             args.append("-codesign=-")
         ctx.run(args)
-        # Qt may not identify custom plugin extensions; sign them before the bundle.
-        identity = credential(opts.sign_identity_env) if opts.sign_identity_env else "-"
-        signing = ["codesign", "--force", "--sign", identity]
-        if identity != "-":
-            signing.extend(["--options", "runtime", "--timestamp"])
-        for name in opts.extra_executables:
-            ctx.run([*signing, str(bundle / name)])
-        ctx.run([*signing, str(bundle)])
 
     def package(self, ctx: BuildContext) -> tuple[Artifact, ...]:
         """Create final packaging artifacts.
@@ -188,6 +186,15 @@ class MacOSBackend(PackageBackend):
         assert isinstance(opts, MacOSOptions)
         bundle = ctx.layout.bundle
         assert bundle is not None
+        # Qt may not identify custom plugin extensions; sign them before the bundle.
+        identity = credential(opts.sign_identity_env) if opts.sign_identity_env else "-"
+        signing = ["codesign", "--force", "--sign", identity]
+        if identity != "-":
+            signing.extend(["--options", "runtime", "--timestamp"])
+        for name in opts.extra_executables:
+            ctx.run([*signing, str(bundle / name)])
+        ctx.run([*signing, str(bundle)])
+
         ctx.run(["codesign", "--verify", "--deep", "--strict", str(bundle)])
         if opts.notary_profile_env:
             submission = ctx.work / "notarization.zip"

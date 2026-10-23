@@ -18,8 +18,8 @@ concurrency:
 
 jobs:
   plan:
-    name: Check all 14 declared cases
-    runs-on: ubuntu-24.04
+    name: Check all 24 declared cases
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Check out source
@@ -39,25 +39,49 @@ jobs:
         run: '"$WINGSETUP_PYTHON" ci/examples.py --coverage'
 
   linux:
-    name: Linux / ${{ matrix.id }}
+    name: Linux / ${{ matrix.runner }} / ${{ matrix.id }}
     needs: plan
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - id: basic-appimage
+            runner: ubuntu-26.04
+            qt: false
+          - id: basic-appimage-lts-old
+            runner: ubuntu-22.04
             qt: false
           - id: basic-deb
+            runner: ubuntu-26.04
+            qt: false
+          - id: basic-deb-lts-old
+            runner: ubuntu-22.04
             qt: false
           - id: basic-shell
+            runner: ubuntu-26.04
+            qt: false
+          - id: basic-shell-lts-old
+            runner: ubuntu-22.04
             qt: false
           - id: basic-shell-sh
+            runner: ubuntu-26.04
+            qt: false
+          - id: basic-shell-sh-lts-old
+            runner: ubuntu-22.04
             qt: false
           - id: basic-archive
+            runner: ubuntu-26.04
+            qt: false
+          - id: basic-archive-lts-old
+            runner: ubuntu-22.04
             qt: false
           - id: qt-appimage
+            runner: ubuntu-26.04
+            qt: true
+          - id: qt-appimage-lts-old
+            runner: ubuntu-22.04
             qt: true
     defaults:
       run:
@@ -71,26 +95,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Qt for the Widgets example
-        if: matrix.qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.10.0'
-          host: linux
-          arch: linux_gcc_64
-          tools: tools_ninja
-          cache: true
-
       - name: Restore verified packaging tools
         uses: actions/cache@v5
         with:
           path: .tools/ci
-          key: example-tools-ubuntu24-x64-${{ hashFiles('ci/tools.lock.json') }}
+          key: example-tools-${{ matrix.runner }}-x64-${{ hashFiles('ci/tools.lock.json') }}
 
       - name: Install framework locally
         uses: ./.github/actions/python-env
 
       - name: Prepare native Linux packaging tools
+        env:
+          EXAMPLE_QT: ${{ matrix.qt }}
         run: '"$WINGSETUP_PYTHON" ci/prepare.py linux'
 
       - name: Build, package, verify checksums, and launch the example
@@ -127,17 +143,26 @@ jobs:
           if-no-files-found: ignore
 
   flatpak:
-    name: Flatpak / ${{ matrix.id }}
+    name: Flatpak / ${{ matrix.runner }} / ${{ matrix.id }}
     needs: plan
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - id: basic-flatpak-binary
+            runner: ubuntu-26.04
+          - id: basic-flatpak-binary-lts-old
+            runner: ubuntu-22.04
           - id: basic-flatpak-sdk
+            runner: ubuntu-26.04
+          - id: basic-flatpak-sdk-lts-old
+            runner: ubuntu-22.04
           - id: qt-flatpak-sdk
+            runner: ubuntu-26.04
+          - id: qt-flatpak-sdk-lts-old
+            runner: ubuntu-22.04
     defaults:
       run:
         shell: bash
@@ -203,7 +228,11 @@ jobs:
             qt_host: windows
             qt_arch: win64_msvc2022_64
           - id: qt-macos
-            runner: macos-latest
+            runner: macos-15
+            qt_host: mac
+            qt_arch: clang_64
+          - id: qt-macos-intel
+            runner: macos-15-intel
             qt_host: mac
             qt_arch: clang_64
     defaults:
@@ -273,7 +302,7 @@ jobs:
   recipes:
     name: Arch / ${{ matrix.id }}
     needs: plan
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container: archlinux:base-devel
     timeout-minutes: 20
     strategy:
@@ -318,10 +347,10 @@ jobs:
           if-no-files-found: error
 
   all-examples:
-    name: All 14 example cases passed
+    name: All 24 example cases passed
     if: always()
     needs: [plan, linux, flatpak, native, recipes]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - name: Check out source
