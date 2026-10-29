@@ -106,8 +106,25 @@ def linux_qt_packages(ubuntu_version: str) -> tuple[str, ...]:
     """
     # Jammy ships SVG plugins inside libqt6svg6, pulled in by its development package.
     svg = ("libqt6svg6-dev",) if ubuntu_version == "22.04" else ("qt6-svg-dev", "qt6-svg-plugins")
-    return ("cmake", "ninja-build", "qt6-base-dev", "qt6-tools-dev",
-            "qt6-tools-dev-tools", "qt6-wayland", *svg)
+    # QtGui's CMake configuration needs headers and link libraries, not just libgl1/libegl1.
+    return ("cmake", "ninja-build", "libgl-dev", "libopengl-dev", "libegl-dev",
+            "qt6-base-dev", "qt6-tools-dev", "qt6-tools-dev-tools", "qt6-l10n-tools",
+            "qt6-wayland", *svg)
+
+
+def check_linux_linguist_tools() -> None:
+    """Verify the imported Linguist tools from the installed distro Qt SDK.
+
+    Raises:
+        RuntimeError: A tool referenced by Qt6LinguistTools is missing or unusable.
+    """
+    # Ask distro qmake rather than assuming the host bin path across Qt versions.
+    binaries = Path(run(["qmake6", "-query", "QT_HOST_BINS"]).strip())
+    for name in ("lconvert", "lrelease", "lupdate"):
+        executable = binaries / name
+        if not executable.is_file():
+            raise RuntimeError(f"Missing Qt Linguist tool: {executable}; install qt6-l10n-tools")
+        run([str(executable), "-help"])
 
 
 def main() -> None:
@@ -136,6 +153,7 @@ def main() -> None:
             # Distro Qt preserves the runner's glibc baseline, including Jammy.
             version = platform.freedesktop_os_release().get("VERSION_ID", "")
             run(["sudo", "apt-get", "install", "-y", *linux_qt_packages(version)])
+            check_linux_linguist_tools()
         prepare_tools()
     elif arguments.group == "flatpak":
         run(["sudo", "apt-get", "update"])

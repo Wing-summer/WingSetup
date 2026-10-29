@@ -229,3 +229,21 @@ Ubuntu 22.04 names the SVG development package `libqt6svg6-dev`, while 26.04 use
 SVG plugins in `libqt6svg6`; 26.04 installs the separate `qt6-svg-plugins` package. Tests compare resolved
 configuration paths, accommodating macOS `/var` to `/private/var` and Windows
 temporary-directory aliases.
+
+Qt Widgets 的 Linux 构建显式安装 `libgl-dev`、`libopengl-dev` 和 `libegl-dev`，
+提供 QtGui/WrapOpenGL 的头文件及链接库；仅有 `libgl1`、`libegl1` 运行库不能满足
+CMake 的开发依赖检查。这些包仅由临时 CI runner 的准备步骤安装。
+
+Linux Qt Widgets builds explicitly install `libgl-dev`, `libopengl-dev`, and
+`libegl-dev` for QtGui/WrapOpenGL headers and link libraries. The `libgl1` and
+`libegl1` runtime packages alone do not satisfy CMake development checks. Only
+the disposable CI runner provisioning step installs these packages.
+
+Qt Linguist 命令行程序来自独立的 `qt6-l10n-tools` 包，两个 LTS 均显式安装。
+准备脚本通过 `qmake6 -query QT_HOST_BINS` 定位工具目录并实际运行 `lconvert`、
+`lrelease`、`lupdate` 的帮助命令，避免只有 CMake 导入声明却没有对应可执行文件。
+
+Qt Linguist executables come from the separate `qt6-l10n-tools` package, installed
+explicitly on both LTS endpoints. Provisioning locates tools with
+`qmake6 -query QT_HOST_BINS` and runs the help commands of `lconvert`, `lrelease`,
+and `lupdate`, rejecting installations with CMake imports but missing executables.

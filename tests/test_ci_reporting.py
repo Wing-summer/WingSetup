@@ -63,7 +63,7 @@ class CIReportTests(unittest.TestCase):
     """Exercise visible matrix completeness and fail-closed result aggregation."""
 
     def test_linux_qt_provisioning_uses_release_specific_svg_packages(self) -> None:
-        """Keep Jammy's renamed SVG development package and runtime plugin explicit."""
+        """Require graphics development files and release-specific SVG packages."""
         spec = importlib.util.spec_from_file_location("ci_prepare_driver", ROOT / "ci/prepare.py")
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
@@ -76,6 +76,29 @@ class CIReportTests(unittest.TestCase):
         self.assertNotIn("libqt6svg6-dev", latest)
         self.assertNotIn("qt6-svg-plugins", jammy)
         self.assertIn("qt6-svg-plugins", latest)
+        for packages in (jammy, latest):
+            for dependency in ("libgl-dev", "libopengl-dev", "libegl-dev", "qt6-l10n-tools"):
+                self.assertIn(dependency, packages)
+
+    def test_linguist_preflight_rejects_missing_imported_tools(self) -> None:
+        """Detect incomplete Qt tool packages before configuring an application."""
+        spec = importlib.util.spec_from_file_location("ci_prepare_tools", ROOT / "ci/prepare.py")
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as temporary:
+            binaries = Path(temporary)
+            with patch.object(module, "run", return_value=str(binaries)) as run:
+                with self.assertRaisesRegex(RuntimeError, "qt6-l10n-tools"):
+                    module.check_linux_linguist_tools()
+                self.assertEqual(run.call_count, 1)
+                for name in ("lconvert", "lrelease", "lupdate"):
+                    (binaries / name).write_bytes(b"fixture")
+                run.reset_mock()
+                module.check_linux_linguist_tools()
+                self.assertEqual(run.call_args_list[0].args[0], ["qmake6", "-query", "QT_HOST_BINS"])
+                self.assertEqual([call.args[0] for call in run.call_args_list[1:]],
+                                 [[str(binaries / name), "-help"] for name in ("lconvert", "lrelease", "lupdate")])
 
     def test_explicit_workflow_matches_every_declared_case(self) -> None:
         """Keep the visible workflow matrix aligned with the backend coverage contract."""
