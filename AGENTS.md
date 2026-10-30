@@ -30,8 +30,8 @@
   执行 strict、测试及相关打包检查；Windows 使用对应虚拟环境路径，工作流可用时通过 actionlint 验证。
 - Use the example coverage manifest in `ci/examples.json` for real packaging CI. Every built-in backend and every configured example target must be covered. Keep the explicit workflow matrices aligned with the manifest; the final result gate must reject missing or failed execution receipts. Verify checksums, metadata, and launch behavior separately; never treat mock tests as native packaging evidence.
   真实打包 CI 使用 `ci/examples.json` 覆盖清单，涵盖所有内置后端及示例目标。显式工作流矩阵须与清单一致，最终汇总不得接受缺失或失败的执行记录。分别验证校验值、元数据和启动，不把模拟测试当作原生打包证据。
-- Keep CI steps named and responsibilities separated. Never run installers, publish releases, push AUR changes, or access signing credentials implicitly in pull-request checks.
-  CI 步骤明确命名并分清职责；PR 检查不隐式运行安装器、发布 release、推送 AUR 或访问签名凭据。
+- Keep CI steps named and responsibilities separated. Never publish releases, push AUR changes, or access signing credentials implicitly in pull-request checks. Installer execution is allowed only by the explicit repository Windows example acceptance entry on disposable CI runners.
+  CI 步骤明确命名并分清职责；PR 检查不隐式发布 release、推送 AUR 或访问签名凭据；仅允许临时 CI runner 的显式 Windows 示例验收入口运行安装器。
 
 ## Release and repository hygiene / 版本与仓库维护
 

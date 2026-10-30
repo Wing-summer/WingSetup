@@ -1,0 +1,11 @@
+# Copyright (c) 2026, wingsummer
+# SPDX-License-Identifier: BSD-3-Clause
+# See LICENSE in the project root for license information.
+
+# Run the release interface against a real, dependency-light source project.
+schema_version: 1
+builds:
+  linux-portable:
+    runner: ubuntu-24.04
+    config: examples/basic/extended.yml
+    targets: [portable]

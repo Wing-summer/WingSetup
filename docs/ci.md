@@ -87,12 +87,12 @@ validate Windows/macOS builds. macos-latest currently denotes arm64; Intel can u
 explicit macos-15-intel or macos-26-intel labels. Do not infer architecture from
 latest alone. See [GitHub's runner table](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
-默认权限 contents: read，不自动发布 release、推送 AUR 或执行安装器。带签名凭据的 job
+默认权限 contents: read，不自动发布 release 或推送 AUR；安装器只在显式 Windows 示例验收中执行。带签名凭据的 job
 只应运行可信 ref；keychain 由应用 bootstrap 或受控 runner 准备。框架只读取签名身份和
 notary profile，缺少凭据时报错。应用特定证书与 Apple 签名属于不同机制，不能默认串联。
 
-Permissions default to contents: read. No release publishing, AUR pushes or installer
-execution occurs automatically. Credentialed jobs should run trusted refs only;
+Permissions default to contents: read. No release publishing or AUR pushes occur automatically. Installer execution is
+restricted to explicit Windows example acceptance. Credentialed jobs should run trusted refs only;
 application bootstrap or controlled runners provision the keychain. The framework
 reads identities and notary profiles and fails if requested credentials are missing.
 Application-specific certificates and Apple signing are separate mechanisms and
@@ -141,30 +141,32 @@ Deepin/KDE Neon are outside this matrix.
 ## 示例测试基准 / Example test baseline
 
 `ci/examples.json` 是覆盖约定，工作流以显式矩阵列出每个用例。plan job 验证这些
-矩阵与每个示例配置目标、八种内置后端一致，并输出计划覆盖表。完整流程和职责见 [.github/README.md](../.github/README.md)。
+矩阵与每个示例配置目标、十种内置后端一致，并输出计划覆盖表。完整流程和职责见 [.github/README.md](../.github/README.md)。
 
 `ci/examples.json` defines the coverage contract; explicit workflow matrices list
-each case. The plan job checks alignment with every example target and all eight
+each case. The plan job checks alignment with every example target and all ten
 built-in backends, then publishes the planned coverage table. See [.github/README.md](../.github/README.md) for workflow responsibilities.
 
 | 测试组 / Group | 示例及产物 / Examples and outputs |
 | --- | --- |
-| Linux / Ubuntu 22.04 + 26.04 | basic AppImage、deb、Makeself .run/.sh、自定义 tar；Qt Widgets AppImage / basic AppImage, deb, Makeself .run/.sh, custom tar; Qt Widgets AppImage |
+| Linux x86_64 / Ubuntu 22.04 + 26.04 | basic AppImage、deb、RPM、Makeself .run/.sh、自定义 tar；Qt Widgets AppImage/RPM / basic AppImage, deb, RPM, Makeself .run/.sh, custom tar; Qt Widgets AppImage/RPM |
 | Flatpak / Ubuntu 22.04 + 26.04 | basic binary、basic SDK、Qt Widgets SDK / basic binary, basic SDK, Qt Widgets SDK |
 | Windows x86_64 | Qt Widgets Inno .exe 与便携 ZIP / Qt Widgets Inno .exe and portable ZIP |
 | macOS arm64 + Intel x86_64 | Qt Widgets .app.zip、ZIP、DMG / Qt Widgets .app.zip, ZIP, DMG |
-| Arch 容器 / container | basic AUR release/-git 配方及 Python/shell 管理脚本归档 / basic AUR release/-git recipes and Python/shell management archive |
+| Arch x86_64 容器 / container | basic/Qt Widgets `.pkg.tar.zst`；AUR release/-git、Python/shell 配方 / basic/Qt Widgets binary packages and AUR/script recipes |
+| Linux aarch64 原生 / native | Ubuntu 22.04-arm / 26.04-arm：basic deb/RPM、Qt Widgets RPM / basic deb/RPM, Qt Widgets RPM |
+| Linux riscv64 / QEMU | Ubuntu 26.04 用户空间：basic deb/RPM、Qt Widgets RPM / Ubuntu 26.04 userspace: basic deb/RPM, Qt Widgets RPM |
 
 每个包都检查 SHA-256 和 sidecar；可启动载荷从生成包解出后运行，AppImage 使用无 FUSE
 启动，Flatpak 从构建树运行且不安装。macOS 的 ZIP 用 ditto 保留链接，DMG 只读挂载。
-Windows Inno 仅生成与校验；启动测试来自同次部署生成的 ZIP，不声称安装器已执行。
+Windows Inno 除 ZIP 启动外，通过显式入口验证安装、升级、卸载；执行记录必须包含三项结果。
 AUR 只验证配方及 .SRCINFO，不抓取模板仓库或编译 .pkg.tar.zst。
 
 Each artifact is checked against SHA-256 and its sidecar. Launchable payloads run
 after extraction; AppImage uses FUSE-free launching and Flatpak runs from its build
 tree without installation. macOS ZIP extraction preserves links with ditto and
-DMGs mount read-only. Windows Inno is generated and checksum-checked; launching
-uses the ZIP from the same deployment, without claiming installer execution.
+DMGs mount read-only. Windows Inno additionally uses an explicit install/upgrade/uninstall acceptance entry;
+receipts must include all three results as well as ZIP launch evidence.
 AUR checks recipe contents and .SRCINFO without fetching template repositories
 or building .pkg.tar.zst packages.
 
@@ -191,12 +193,12 @@ without installing system dependencies.
 
 示例工作流最后的 `all-examples` job 收集每个用例上传的小型执行记录，Summary 逐项
 显示状态、产物格式、SHA-256 和启动结果。缺失、失败、记录过期或产物格式不全均失败；
-只有本次 run/attempt/commit 的 24/24 用例及其前置任务全部成功才通过。该 job
+只有本次 run/attempt/commit 的 41/41 用例及其前置任务全部成功才通过。该 job
 不下载所有大型安装包，也不根据“配置存在”推断测试通过。可将其加入分支保护。
 
 The example workflow's final `all-examples` job collects small execution receipts
 and summarizes each case's status, output formats, SHA-256 checks, and launches.
-Missing, failed, stale, or incomplete evidence fails acceptance. Only 24/24 cases
+Missing, failed, stale, or incomplete evidence fails acceptance. Only 41/41 cases
 from the current run/attempt/commit, together with successful prerequisite jobs,
 pass. The job does not download every large package or infer success from the
 presence of configuration. It can serve as a required branch-protection check.
@@ -247,3 +249,51 @@ Qt Linguist executables come from the separate `qt6-l10n-tools` package, install
 explicitly on both LTS endpoints. Provisioning locates tools with
 `qmake6 -query QT_HOST_BINS` and runs the help commands of `lconvert`, `lrelease`,
 and `lupdate`, rejecting installations with CMake imports but missing executables.
+
+## 多架构与原生二进制包 / Multiple architectures and native binary packages
+
+当前共 41 个独立用例：linux 18、flatpak 6、native 3、recipes 5、arm 6、riscv 3。
+Arch 组同时包含真实 `.pkg.tar.zst` 和 AUR/脚本配方；只有后者不启动程序。
+RPM 查询包内架构，Arch 检查 `.PKGINFO` 并运行 `pacman -Qip`，两者都解包启动并检查校验值。
+Qt 系统包依赖发行版 Qt，不把它们描述为脱离系统依赖的 AppImage。
+
+There are 41 independent cases: 18 linux, six flatpak, three native, five recipes,
+six arm, and three riscv. The Arch group contains real `.pkg.tar.zst` binaries and
+AUR/script recipes; only recipes omit launching. RPM queries package architecture;
+Arch checks `.PKGINFO` and runs `pacman -Qip`. Both extract, launch, and verify
+checksums. Qt system packages depend on distro Qt and are not standalone AppImages.
+
+ARM 使用 `ubuntu-22.04-arm`、`ubuntu-26.04-arm` 原生 runner，不下载 x86 AppImage 工具。
+RISC-V 使用 `uraimo/run-on-arch-action@v3` 和 `riscv64/ubuntu:26.04` 用户空间；
+工具、Python、编译器及产物都在 riscv64 环境执行，不借用 x86 Python。
+QEMU 需要 runner 的 binfmt 支持，动作负责准备；这是用户态模拟测试，不覆盖物理 RISC-V
+硬件、内核、GPU 或桌面驱动。AppImage/Flatpak 新架构不在本次矩阵中。
+
+ARM uses native `ubuntu-22.04-arm` and `ubuntu-26.04-arm` runners without downloading
+x86 AppImage tools. RISC-V uses `uraimo/run-on-arch-action@v3` and
+`riscv64/ubuntu:26.04`; Python, compilers, tools, and payloads run inside riscv64
+userspace rather than borrowing x86 Python. The action provisions required binfmt
+support. This is user-mode emulation, not physical RISC-V hardware, kernel, GPU,
+or desktop-driver testing. Additional AppImage/Flatpak architectures are outside
+this matrix.
+
+执行记录必须匹配实际架构和 native/container/qemu 类型；Summary 对 RISC-V 标明 QEMU。
+缺少任一架构或任一产物的启动证据，最终汇总失败。新增环境需由远端 Actions 实际执行
+后才能确认为通过；本地静态检查与模拟测试不代替跨架构验证。
+
+Receipts must match the actual architecture and native/container/qemu execution
+kind; summaries mark RISC-V as QEMU. Missing architecture cases or required launches
+fail the final gate. Actual remote Actions execution is required before claiming
+new environments pass; local static and mocked tests do not replace cross-architecture evidence.
+
+参考 / References: [GitHub runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners),
+[QEMU action](https://github.com/uraimo/run-on-arch-action).
+
+共享安装集成的完整字段、能力跳过规则及 Windows 验收边界见 [安装指南](installation.md)。
+Linux MIME 缓存验证仅写临时目录；macOS 声明检查基于实际归档。可复用 Action 上传
+installation.json，但绝不因调用打包而自动安装产物。
+
+See the [installation guide](installation.md) for shared options, ignored capabilities,
+and Windows acceptance boundaries. Linux MIME checks write only temporary directories;
+macOS checks inspect actual archives. The reusable Action uploads installation.json
+without implicitly installing any artifact.

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import cast
 
 from ..core import BuildContext, PackageBackend, ProjectHooks, artifact, deploy_resources
+from ..installation import apply_installation
 from ..model import Artifact, BackendOptions, SetupError
 from ..platforms import normalize_arch
 from ..validation import ConfigPaths, fields, strings, mapping
@@ -149,6 +150,7 @@ class MacOSBackend(PackageBackend):
         shutil.copytree(source, bundle, symlinks=True)
         deploy_resources(ctx)
         hooks.deploy(ctx)
+        apply_installation(ctx)
         info = cast(dict[str, object], plistlib.loads((bundle / "Contents/Info.plist").read_bytes()))
         if info.get("CFBundleIdentifier") != ctx.config.application.id or info.get("CFBundleExecutable") != ctx.executable_name:
             raise SetupError("Bundle identity or executable does not match configuration")

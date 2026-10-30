@@ -149,3 +149,59 @@ endpoints. Local Arch checks cover static validation and unit tests; actual GitH
 Actions receipts must establish packaging, Wayland, signing, and DMG launches on
 the new runners. Earlier dated records retain their historical verification scope
 and do not claim execution of the expanded matrix.
+
+## RPM 与 Arch 本地验收 / Local RPM and Arch verification
+
+本次新增的基础 C、Qt Widgets 示例均在本机 x86_64 实际生成 `.rpm` 和 `.pkg.tar.zst`，
+检查包内架构/元数据并解包启动。Qt 两种包均输出
+`WIDGETS_DEPLOY_OK: translation, resources, .wingplg, private library`。
+RPM 工具及兼容库按包仓库 SHA-256 校验后解压到 `.tools/rpm-local`，未安装系统软件或产物。
+这些本地结果不表示 Fedora/Arch 的系统安装或新增 ARM/RISC-V 远端用例已通过。
+
+Both basic C and Qt Widgets fixtures produced real `.rpm` and `.pkg.tar.zst`
+packages on the local x86_64 host, followed by metadata/architecture inspection,
+extraction, and launches. Both Qt packages emitted
+`WIDGETS_DEPLOY_OK: translation, resources, .wingplg, private library`.
+RPM tools and compatibility libraries were verified using repository SHA-256
+metadata and extracted into `.tools/rpm-local`; no system software or output
+packages were installed. Local results do not establish Fedora/Arch installation
+acceptance or success of the new remote ARM/RISC-V cases.
+
+## 通用安装配置验收（2026-10-30） / Shared installation validation (2026-10-30)
+
+共享配置及 Inno 集成通过 Linux、Windows、Darwin 三种目标平台的 Pyright strict 检查。
+官方 Inno Setup 6.7.3 编译器在工作区隔离的 Wine 环境中成功编译用户安装、机器安装和带项目回调的自定义 ISS；
+此验证仅编译安装器，未执行安装、升级或卸载。
+
+Shared preferences and Inno integration passed Pyright strict for Linux, Windows,
+and Darwin target platforms. The official Inno Setup 6.7.3 compiler successfully
+compiled user-scope, machine-scope, and custom ISS installers with a project callback
+in a workspace-isolated Wine environment. This compiled installers only; it did not
+execute installation, upgrade, or removal.
+
+Qt Widgets 的 AppImage、RPM 和 Arch 包已在本机实际生成，完成解包、清理宿主部署环境后的程序启动，
+并在临时目录验证 desktop/MIME 数据库。发布 wheel 已检查包含 Inno 运行时代码。
+Windows 的安装、覆盖升级、卸载与注册表清理，以及 macOS 的原生归档、签名和启动，仍须由对应 CI runner 验收；
+这些远端结果不计入本地成功记录。Windows 示例汇总要求三项安装生命周期证据，可复用 Action 不执行安装器。
+
+Qt Widgets AppImage, RPM, and Arch packages were generated locally, extracted,
+and launched with host deployment variables cleared; desktop/MIME databases were
+validated in temporary directories. The release wheel was checked for the Inno
+runtime resource. Windows installation, replacement upgrade, removal, and registry
+cleanup, along with native macOS archive, signature, and launch checks, still require
+the corresponding CI runners. These remote checks are not counted as local successes.
+The Windows example result gate requires all three installation lifecycle receipts;
+the reusable Action does not execute installers.
+
+## 发布接口验证（2026-10-30） / Release interface verification (2026-10-30)
+
+本地完成最小 C 程序的原生编译、通用归档、发布文件命名、跨任务清单汇总、SHA-256 重算及解包启动；
+Qt 默认模式与源提交固定的矩阵输出也已检查。示例覆盖清单扩展为 41 项。
+FreeBSD VM、riscv64 容器及其他平台的新发布编排尚未在远端执行；不代表全部发布目标已经产出或通过原生验收。
+
+A minimal C application completed native compilation, portable archiving, release
+filename generation, job receipt aggregation, SHA-256 recomputation, and extracted
+launch locally. Matrix output was checked for default Qt mode and source commit
+pinning. Example coverage now declares 41 cases. The new FreeBSD VM, riscv64
+container, and other release orchestration paths have not run remotely; this does
+not claim that every release target has been generated or natively validated.

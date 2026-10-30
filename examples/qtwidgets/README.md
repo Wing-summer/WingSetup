@@ -76,3 +76,30 @@ Linux CI 分别使用 Ubuntu 22.04 与 26.04 的发行版 Qt，包含 Wayland、
 Linux CI uses distro Qt on Ubuntu 22.04 and 26.04, including Wayland, SVG, and
 translation tools. Both LTS endpoints build and launch independently; this does
 not imply that newer-system artifacts work with an older glibc.
+
+## RPM、Arch 与多架构 / RPM, Arch, and multiple architectures
+
+配置增加 `rpm`、`arch`、`rpm-arm64`、`rpm-riscv64`；基础示例另有 `deb-arm64`、
+`deb-riscv64`。匹配架构的 Linux 环境负责编译，arm64 是 aarch64 的别名。
+`arch` 目标生成真实 `.pkg.tar.zst`，与 AUR 配方导出不同。运行前准备系统工具；
+框架不会自动安装。字段及边界见 [使用说明](../../docs/usage.md)。
+
+Configurations add `rpm`, `arch`, `rpm-arm64`, and `rpm-riscv64`; the basic fixture
+also has `deb-arm64` and `deb-riscv64`. A matching Linux environment performs
+compilation; arm64 aliases aarch64. The `arch` target generates a real
+`.pkg.tar.zst`, distinct from AUR recipes. Prepare native tools first; the framework
+never installs them automatically. See [usage](../../docs/usage.md) for options and boundaries.
+
+## 安装选项验收 / Installation preferences fixture
+
+共享 installation 使用独占 `.wingsetup-demo` / `.wingsetup-obsolete` 扩展名与同名 URL
+scheme；第二项用于验证升级清理。ICO/ICNS 从本示例 BSD 许可的 SVG 图标生成，不修改 EXE。
+Windows 的额外选项默认未勾选，只有显式临时 runner 验收选择并运行它们；不接管默认应用。
+完整说明见 [安装指南](../../docs/installation.md)。
+
+Shared installation preferences use exclusive .wingsetup-demo/.wingsetup-obsolete
+extensions and matching URL schemes; the second entries exercise upgrade cleanup.
+ICO/ICNS assets derive from this fixture's BSD-licensed SVG without modifying the
+EXE. Extra Windows options are initially unchecked; only explicit ephemeral-runner
+acceptance selects and executes them, without taking over defaults. See the
+[installation guide](../../docs/installation.md).

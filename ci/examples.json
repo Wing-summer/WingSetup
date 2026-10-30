@@ -190,5 +190,141 @@
     "group": "native",
     "runner": "macos-15-intel",
     "qt": true
+  },
+  {
+    "id": "basic-rpm",
+    "config": "examples/basic/extended.yml",
+    "target": "rpm",
+    "group": "linux",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-rpm-lts-old",
+    "config": "examples/basic/extended.yml",
+    "target": "rpm",
+    "group": "linux",
+    "runner": "ubuntu-22.04",
+    "qt": false
+  },
+  {
+    "id": "basic-arch",
+    "config": "examples/basic/extended.yml",
+    "target": "arch",
+    "group": "recipes",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-rpm-arm64",
+    "config": "examples/basic/extended.yml",
+    "target": "rpm-arm64",
+    "group": "arm",
+    "runner": "ubuntu-26.04-arm",
+    "qt": false
+  },
+  {
+    "id": "basic-rpm-arm64-lts-old",
+    "config": "examples/basic/extended.yml",
+    "target": "rpm-arm64",
+    "group": "arm",
+    "runner": "ubuntu-22.04-arm",
+    "qt": false
+  },
+  {
+    "id": "basic-rpm-riscv64",
+    "config": "examples/basic/extended.yml",
+    "target": "rpm-riscv64",
+    "group": "riscv",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-deb-arm64",
+    "config": "examples/basic/extended.yml",
+    "target": "deb-arm64",
+    "group": "arm",
+    "runner": "ubuntu-26.04-arm",
+    "qt": false
+  },
+  {
+    "id": "basic-deb-arm64-lts-old",
+    "config": "examples/basic/extended.yml",
+    "target": "deb-arm64",
+    "group": "arm",
+    "runner": "ubuntu-22.04-arm",
+    "qt": false
+  },
+  {
+    "id": "basic-deb-riscv64",
+    "config": "examples/basic/extended.yml",
+    "target": "deb-riscv64",
+    "group": "riscv",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "qt-rpm",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "rpm",
+    "group": "linux",
+    "runner": "ubuntu-26.04",
+    "qt": true
+  },
+  {
+    "id": "qt-rpm-lts-old",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "rpm",
+    "group": "linux",
+    "runner": "ubuntu-22.04",
+    "qt": true
+  },
+  {
+    "id": "qt-arch",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "arch",
+    "group": "recipes",
+    "runner": "ubuntu-26.04",
+    "qt": true
+  },
+  {
+    "id": "qt-rpm-arm64",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "rpm-arm64",
+    "group": "arm",
+    "runner": "ubuntu-26.04-arm",
+    "qt": true
+  },
+  {
+    "id": "qt-rpm-arm64-lts-old",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "rpm-arm64",
+    "group": "arm",
+    "runner": "ubuntu-22.04-arm",
+    "qt": true
+  },
+  {
+    "id": "qt-rpm-riscv64",
+    "config": "examples/qtwidgets/package.yml",
+    "target": "rpm-riscv64",
+    "group": "riscv",
+    "runner": "ubuntu-26.04",
+    "qt": true
+  },
+  {
+    "id": "basic-portable",
+    "config": "examples/basic/extended.yml",
+    "target": "portable",
+    "group": "linux",
+    "runner": "ubuntu-26.04",
+    "qt": false
+  },
+  {
+    "id": "basic-portable-lts-old",
+    "config": "examples/basic/extended.yml",
+    "target": "portable",
+    "group": "linux",
+    "runner": "ubuntu-22.04",
+    "qt": false
   }
 ]

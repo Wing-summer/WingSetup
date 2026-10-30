@@ -56,3 +56,16 @@ it is not a general installation manager. Package creation does not execute the 
 Every target in these configurations belongs to the framework CI coverage
 manifest. The example hook uses read-only `paths` for project paths; see the
 [configuration guide](../../docs/usage.md).
+
+## RPM、Arch 与多架构 / RPM, Arch, and multiple architectures
+
+配置增加 `rpm`、`arch`、`rpm-arm64`、`rpm-riscv64`；基础示例另有 `deb-arm64`、
+`deb-riscv64`。匹配架构的 Linux 环境负责编译，arm64 是 aarch64 的别名。
+`arch` 目标生成真实 `.pkg.tar.zst`，与 AUR 配方导出不同。运行前准备系统工具；
+框架不会自动安装。字段及边界见 [使用说明](../../docs/usage.md)。
+
+Configurations add `rpm`, `arch`, `rpm-arm64`, and `rpm-riscv64`; the basic fixture
+also has `deb-arm64` and `deb-riscv64`. A matching Linux environment performs
+compilation; arm64 aliases aarch64. The `arch` target generates a real
+`.pkg.tar.zst`, distinct from AUR recipes. Prepare native tools first; the framework
+never installs them automatically. See [usage](../../docs/usage.md) for options and boundaries.

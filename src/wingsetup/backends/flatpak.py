@@ -10,6 +10,7 @@ import re
 
 from ..validation import read_yaml
 from ..core import BuildContext, PackageBackend, ProjectHooks, artifact, deploy_resources, tool_missing
+from ..installation import apply_installation
 from ..model import Artifact, FlatpakOptions, SetupError
 from ..validation import ConfigPaths, fields, string, strings
 from .common import binary_deploy, common_check, desktop_check, validate_elf
@@ -161,6 +162,7 @@ class FlatpakBackend(PackageBackend):
         else:
             deploy_resources(ctx)
             hooks.deploy(ctx)
+        apply_installation(ctx)
         desktop = ctx.deploy_dir / f"files/share/applications/{app.id}.desktop"
         desktop_check(desktop, ctx.executable_name, app.id)
         ctx.run(["desktop-file-validate", str(desktop)])

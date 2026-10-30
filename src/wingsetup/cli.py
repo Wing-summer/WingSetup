@@ -84,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
                     spec = registration(target.backend)
                     rows.append({"name": target.name, "backend": target.backend, "platform": target.platform,
                                  "arch": target.arch, "layout": target.layout,
+                                 "installation_features": sorted(spec.installation_features) if spec else ["license_file"],
                                  "kind": spec.kind if spec else "custom", "output": str(config.output / target.name)})
                 if args.json:
                     print(json.dumps(rows, indent=2))

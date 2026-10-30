@@ -471,3 +471,89 @@ macos.qt_args 不允许覆盖 -codesign、-sign-for-notarization、-no-codesign�
 macos.qt_args cannot override -codesign, -sign-for-notarization, -no-codesign,
 -executable, or -dmg. Use the dedicated signing, extra-code, and formats settings
 to preserve final signing order.
+
+## RPM 与 Arch 二进制包 / RPM and Arch binary packages
+
+```yaml
+targets:
+  rpm:
+    backend: rpm
+    arch: x86_64
+    options:
+      package_name: example-app
+      release: '1'
+      depends: ['libc.so.6()(64bit)']
+      url: https://example.org
+  arch:
+    backend: arch
+    arch: x86_64
+    options:
+      package_name: example-app
+      release: '1'
+      depends: [glibc]
+      url: https://example.org
+```
+
+两者均部署到 `usr/`：主程序位于 `usr/bin`，元数据位于 `usr/share`，资源和私有库由
+资源规则或项目 Hook 补齐。两后端的 options 仅接受 `package_name`、`release`、
+`depends`、`url`；前者必填，其余分别默认 `'1'`、空列表、空 URL（省略字段）。
+版本来自 `application.version`，依赖名和版本表达式应使用目标发行版的包管理语法。
+
+Both backends stage under `usr/`: executables in `usr/bin`, metadata in `usr/share`,
+and resources/private libraries supplied by copy rules or project hooks. Their
+options accept only `package_name`, `release`, `depends`, and `url`. The name is
+required; remaining fields default to `'1'`, an empty list, and an omitted URL.
+Versions come from `application.version`. Dependency names and version expressions
+must follow the destination distribution's package-manager syntax.
+
+RPM 使用工作目录内独立的 spec、构建树及 RPM 数据库，调用 `rpmdb` 和 `rpmbuild -bb`。
+固定 RPM 4 输出格式以兼容旧工具；保留 RPM 的 ELF 自动依赖生成并附加显式 `depends`。
+不安装包、不使用系统 RPM 数据库、不自动签名；不执行 strip/debug 拆分及发行版的
+安装后处理，保持已有部署内容。调用方应在发布前审阅发行版策略与实际安装兼容性。
+
+RPM uses a private spec, build tree, and RPM database via `rpmdb` and `rpmbuild -bb`.
+It requests RPM 4 format for older-reader compatibility, retains ELF dependency
+generation, and adds explicit `depends`. It does not install packages, use the
+system RPM database, or sign automatically. Strip/debug splitting and distro
+post-install processing are disabled to preserve prebuilt payloads. Review distro
+policy and actual installation compatibility before release.
+
+Arch 调用普通用户的 `makepkg`/`fakeroot`，从本地 SHA-256 校验的 payload 生成包，
+写入 `.PKGINFO`、`.BUILDINFO`、`.MTREE`。不调用 `--syncdeps` 或 `--install`，
+依赖由用户准备。保留已部署文件，不再次 strip 或移除静态库。宿主需有
+`makepkg`、`fakeroot`、`bsdtar`、`zstd`、`desktop-file-validate` 与 `/etc/makepkg.conf`；
+root 执行会在检查阶段拒绝。RPM 需 `rpmbuild`、`rpmdb`、`desktop-file-validate`。
+
+Arch invokes unprivileged `makepkg`/`fakeroot` using a local checksummed payload,
+producing `.PKGINFO`, `.BUILDINFO`, and `.MTREE`. It never uses `--syncdeps` or
+`--install`; users prepare dependencies. Deployed files are preserved without
+stripping or removing static libraries. Requirements are `makepkg`, `fakeroot`,
+`bsdtar`, `zstd`, `desktop-file-validate`, and `/etc/makepkg.conf`; checks reject
+root execution. RPM requires `rpmbuild`, `rpmdb`, and `desktop-file-validate`.
+
+Linux 的 `arch` 接受 `x86_64`、`aarch64`（`arm64` 自动规范化）和 `riscv64`。
+程序在匹配架构的原生或 QEMU 用户空间编译，框架检查 ELF e_machine；仅改架构标签
+不会进行交叉编译，也不能验证全部 ABI。Debian 的架构标签分别是 `amd64`、`arm64`、`riscv64`。
+当前 Arch 包测试使用官方 Arch Linux x86_64；aarch64/riscv64 的 Arch 移植版不在矩阵中。
+AppImage/Flatpak 仍要求该架构可用的打包工具/runtime；本次不提供 RISC-V AppImage/Flatpak。
+
+Linux `arch` accepts `x86_64`, `aarch64` (`arm64` normalizes automatically), and
+`riscv64`. Compile in a matching native or QEMU userspace; ELF e_machine is checked.
+Changing the label does not cross-compile code or prove ABI compatibility. Debian
+labels are `amd64`, `arm64`, and `riscv64`. Arch package CI uses official Arch Linux
+x86_64; Arch ports for aarch64/riscv64 are outside the matrix. AppImage/Flatpak still
+require tools/runtimes for their architecture; this change supplies no RISC-V
+AppImage/Flatpak baseline.
+
+依据 / References: [RPM build](https://rpm.org/docs/4.20.x/man/rpmbuild.8.html),
+[makepkg](https://man.archlinux.org/man/makepkg.8),
+[makepkg configuration](https://man.archlinux.org/man/makepkg.conf.5).
+
+## 共享安装配置 / Shared installation preferences
+
+顶层和目标均接受可选 installation，详见 [安装集成指南](installation.md)。
+显式后端设置优先，未支持的行为跳过并写入 installation.json；旧配置行为保持。
+
+Top-level and target mappings accept optional installation preferences; see the
+[installation guide](installation.md). Explicit backend settings take precedence;
+unsupported behavior is skipped and recorded in installation.json. Legacy behavior is preserved.

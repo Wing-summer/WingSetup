@@ -11,6 +11,7 @@ from pathlib import Path
 from .model import Application, BackendOptions, Config, CopyRule, Project, SetupError, Target
 from .validation import ConfigPaths, fields, mapping, read_yaml, sequence, string, strings, patterns
 from .platforms import normalize_arch
+from .install_config import merge_installation, parse_installation
 
 
 def load_config(path: Path) -> Config:
@@ -29,7 +30,7 @@ def load_config(path: Path) -> Config:
     path = path.resolve()
     base = path.parent
     data = read_yaml(path)
-    fields(data, "schema_version application project targets workspace output", "config")
+    fields(data, "schema_version application project targets workspace output installation", "config")
     if type(data.get("schema_version")) is not int or data["schema_version"] != 1:
         raise SetupError("schema_version must be 1")
 
@@ -78,12 +79,14 @@ def load_config(path: Path) -> Config:
             if relative_to not in ("root", "prefix", "app", "resources", "libraries", "plugins"):
                 raise SetupError("resource.relative_to must be root, prefix, app, resources, libraries or plugins")
             platforms = strings(rule.get("platforms", []), "resource.platforms")
-            if set(platforms) - {"Linux", "Windows", "Darwin"}:
-                raise SetupError("resource.platforms must contain Linux, Windows, or Darwin")
+            if set(platforms) - {"Linux", "Windows", "Darwin", "FreeBSD"}:
+                raise SetupError("resource.platforms must contain Linux, Windows, Darwin, or FreeBSD")
             resources.append(CopyRule(resolve(rule.get("source"), "resource.source"), dest, relative_to,
                                       platforms, patterns(rule.get("exclude", []), "resource.exclude")))
         return tuple(resources)
 
+    installation_data = mapping(data.get("installation", {}), "installation")
+    installation = parse_installation(installation_data, paths) if "installation" in data else None
     resources = parse_resources(project.get("resources", []))
     project_config = Project(resolve(project.get("source", "."), "project.source"),
                              None if hooks is None else string(hooks, "project.hooks"),
@@ -94,11 +97,11 @@ def load_config(path: Path) -> Config:
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", name):
             raise SetupError(f"Invalid target name: {name}")
         target = mapping(value, f"targets.{name}")
-        fields(target, "backend arch options resources platform executable tools exclude", name)
+        fields(target, "backend arch options resources platform executable tools exclude installation", name)
         backend = string(target.get("backend"), f"{name}.backend")
         import platform as host_platform
         arch = normalize_arch(string(target.get("arch", host_platform.machine()), f"{name}.arch"))
-        if arch not in ("x86_64", "aarch64", "universal2", "any"):
+        if arch not in ("x86_64", "aarch64", "riscv64", "universal2", "any"):
             raise SetupError(f"Unsupported architecture: {arch}")
         opts = mapping(target.get("options", {}), f"{name}.options")
         from .registry import registration
@@ -114,6 +117,8 @@ def load_config(path: Path) -> Config:
         target_platform = string(target.get("platform", spec.platforms[0] if spec else host_platform.system()), "platform")
         if spec and target_platform not in spec.platforms and spec.platforms != ("any",):
             raise SetupError(f"{backend} does not support platform {target_platform}")
+        if arch == "riscv64" and target_platform != "Linux":
+            raise SetupError("riscv64 is only supported for Linux")
         if arch == "universal2" and target_platform != "Darwin":
             raise SetupError("universal2 is only supported for macOS")
         if arch == "any" and (spec is None or spec.kind != "recipe"):
@@ -123,10 +128,12 @@ def load_config(path: Path) -> Config:
                               target_platform, None if override is None else resolve(override, "target.executable"),
                               spec.layout if spec else "portable",
                               tuple(paths.tool(value, "target.tools") for value in strings(target.get("tools", []), "target.tools")),
-                              patterns(target.get("exclude", []), "target.exclude")))
+                              patterns(target.get("exclude", []), "target.exclude"),
+                              parse_installation(merge_installation(installation_data, mapping(target.get("installation", {}), "target.installation")), paths) if installation is not None or "installation" in target else None,
+                              frozenset(opts)))
     if not targets:
         raise SetupError("At least one target is required")
     return Config(path, application, project_config, tuple(targets),
                   resolve(data.get("workspace", ".wingsetup"), "workspace"),
-                  resolve(data.get("output", "dist"), "output"))
+                  resolve(data.get("output", "dist"), "output"), installation)
 

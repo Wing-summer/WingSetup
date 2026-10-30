@@ -12,6 +12,44 @@ application:
   executable: '{build}/widgets-demo'
   desktop: org.example.Widgets.desktop
   icon: org.example.Widgets.svg
+installation:
+  publisher: WingSetup example
+  homepage: https://example.org/widgets
+  support_url: https://example.org/widgets/support
+  license_file: ../../LICENSE
+  icons:
+    linux: org.example.Widgets.svg
+    windows: assets/icons/app.ico
+    macos: assets/icons/app.icns
+  scope: user
+  shortcuts:
+    start_menu: true
+    desktop: true
+  launch_after_install: true
+  add_to_path: true
+  autostart: true
+  file_types:
+    - id: demo
+      description: WingSetup demonstration document
+      extensions: [.wingsetup-demo]
+      mime_type: application/x-wingsetup-demo
+      icons:
+        linux: org.example.Widgets.svg
+        windows: assets/icons/app.ico
+        macos: assets/icons/app.icns
+    - id: obsolete
+      description: WingSetup upgrade cleanup fixture
+      extensions: [.wingsetup-obsolete]
+      mime_type: application/x-wingsetup-obsolete
+  protocols:
+    - scheme: wingsetup-demo
+      description: WingSetup demonstration URL
+    - scheme: wingsetup-obsolete
+      description: WingSetup upgrade cleanup URL
+  context_menu:
+    - id: open
+      label: Open with WidgetsDemo
+      targets: [file, directory, background]
 project:
   source: .
   hooks: hooks.py:WidgetsHooks
@@ -77,3 +115,27 @@ targets:
       extra_executables:
         - Contents/PlugIns/demo_plugin.wingplg
         - Contents/PlugIns/platforms/libqoffscreen.dylib
+  rpm:
+    backend: rpm
+    arch: x86_64
+    options:
+      package_name: wingsetup-qt
+      depends: [qt6-qtbase, qt6-qtsvg]
+  arch:
+    backend: arch
+    arch: x86_64
+    options:
+      package_name: wingsetup-qt
+      depends: [qt6-base, qt6-svg]
+  rpm-arm64:
+    backend: rpm
+    arch: aarch64
+    options:
+      package_name: wingsetup-qt
+      depends: [qt6-qtbase, qt6-qtsvg]
+  rpm-riscv64:
+    backend: rpm
+    arch: riscv64
+    options:
+      package_name: wingsetup-qt
+      depends: [qt6-qtbase, qt6-qtsvg]

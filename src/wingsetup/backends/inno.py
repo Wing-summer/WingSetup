@@ -14,8 +14,10 @@ from pathlib import Path
 from typing import Literal
 
 from ..core import BuildContext, PackageBackend, ProjectHooks, artifact
+from ..installation import apply_installation
 from ..model import Artifact, BackendOptions, SetupError
 from ..validation import ConfigPaths, fields, strings, string, mapping
+from .inno_installation import effective_options, sections
 from .native import deploy_entry, native_check, output_path, safe_line
 
 
@@ -195,6 +197,7 @@ class InnoBackend(PackageBackend):
         opts = ctx.target.options
         assert isinstance(opts, InnoOptions)
         ctx.run([opts.windeployqt, *opts.qt_args, "--dir", str(ctx.app_dir), str(entry)])
+        apply_installation(ctx)
 
     def package(self, ctx: BuildContext) -> tuple[Artifact, ...]:
         """Archive portable files and compile requested Inno Setup installers.
@@ -208,6 +211,7 @@ class InnoBackend(PackageBackend):
         opts = ctx.target.options
         assert isinstance(opts, InnoOptions)
         app = ctx.config.application
+        opts = effective_options(ctx, opts)
         validate_pe(ctx.app_dir / ctx.executable_name, ctx.target.arch)
         result: list[Artifact] = []
         for format_name in opts.formats:
@@ -223,13 +227,14 @@ class InnoBackend(PackageBackend):
             script = ctx.work / "installer.iss"
             if opts.script is not None:
                 # Project-owned templates retain tasks, translations and file associations.
-                content = opts.script.read_text(encoding="utf-8-sig")
+                content = ctx.resolve_path(opts.script).read_text(encoding="utf-8-sig")
                 customized = bool(opts.setup_icon or opts.default_dir or opts.app_id or opts.setup or opts.privileges != "lowest")
                 if customized and "@SETUP_DIRECTIVES@" not in content:
                     raise SetupError("Custom ISS must include @SETUP_DIRECTIVES@ to consume installer options")
                 if opts.file_excludes or opts.desktop_shortcut:
                     raise SetupError("Custom ISS owns [Files]/[Icons]; use target.exclude or template directives")
                 content = content.replace("@SETUP_DIRECTIVES@", setup_directives(ctx, opts))
+                content = content.replace("@INSTALLATION_SECTIONS@", sections(ctx, opts))
                 for key, value in {"@PAYLOAD@": str(ctx.deploy_dir), "@APP_ID@": app.id,
                                    "@APP_NAME@": app.name, "@VERSION@": app.version,
                                    "@EXECUTABLE@": ctx.executable_name}.items():
@@ -246,6 +251,11 @@ class InnoBackend(PackageBackend):
                 )
                 if opts.desktop_shortcut:
                     content += f'Name: "{{autodesktop}}\\{app.name}"; Filename: "{{app}}\\{ctx.executable_name}"\n'
+            if opts.script is None and ctx.installation is not None:
+                # Shared preferences replace the generated default Start menu entry.
+                default_icon = f'Name: "{{group}}\\{app.name}"; Filename: "{{app}}\\{ctx.executable_name}"\n'
+                content = content.replace(default_icon, "")
+                content += sections(ctx, opts)
             script.write_text(content, encoding="utf-8-sig")
             ctx.run([opts.iscc, f"/O{output.parent}", f"/F{output.stem}", str(script)])
             result.append(artifact(ctx, output, "inno"))

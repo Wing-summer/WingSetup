@@ -134,7 +134,7 @@ def main() -> None:
     Flatpak runtimes. Native package installation is restricted to GitHub runners.
     """
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("group", choices=("linux", "flatpak", "native"))
+    parser.add_argument("group", choices=("linux", "flatpak", "native", "arm"))
     parser.add_argument("--tools-only", action="store_true")
     arguments = parser.parse_args()
     if arguments.tools_only:
@@ -145,19 +145,20 @@ def main() -> None:
     if os.environ.get("GITHUB_ACTIONS") != "true":
         parser.error("System provisioning is CI-only; use linux --tools-only locally")
     system = platform.system()
-    if arguments.group == "linux":
+    if arguments.group in {"linux", "arm"}:
         run(["sudo", "apt-get", "update"])
-        run(["sudo", "apt-get", "install", "-y", "build-essential", "desktop-file-utils", "dpkg-dev",
+        run(["sudo", "apt-get", "install", "-y", "build-essential", "desktop-file-utils", "dpkg-dev", "rpm", "libarchive-tools", "shared-mime-info",
              "libgl1", "libegl1", "libxkbcommon-x11-0", "libxcb-cursor0", "weston"])
         if os.environ.get("EXAMPLE_QT") == "true":
             # Distro Qt preserves the runner's glibc baseline, including Jammy.
             version = platform.freedesktop_os_release().get("VERSION_ID", "")
             run(["sudo", "apt-get", "install", "-y", *linux_qt_packages(version)])
             check_linux_linguist_tools()
-        prepare_tools()
+        if arguments.group == "linux":
+            prepare_tools()
     elif arguments.group == "flatpak":
         run(["sudo", "apt-get", "update"])
-        run(["sudo", "apt-get", "install", "-y", "build-essential", "flatpak", "flatpak-builder", "desktop-file-utils"])
+        run(["sudo", "apt-get", "install", "-y", "build-essential", "flatpak", "flatpak-builder", "desktop-file-utils", "shared-mime-info"])
         run(["sudo", "flatpak", "remote-add", "--if-not-exists", "flathub", "https://flathub.org/repo/flathub.flatpakrepo"])
         run(["sudo", "flatpak", "install", "-y", "flathub", "org.kde.Platform//6.10", "org.kde.Sdk//6.10"])
     elif system == "Windows":

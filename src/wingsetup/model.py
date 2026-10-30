@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from .install_model import Installation
+
 
 class SetupError(Exception):
     """An actionable configuration or packaging failure."""
@@ -95,6 +97,10 @@ class AppImageOptions(BackendOptions):
     qt_platforms: tuple[str, ...] = ()
     #: Shared-library glob patterns passed to linuxdeploy's dependency exclusion option.
     exclude_libraries: tuple[str, ...] = ()
+    #: Optional AppImage update information; requests a required zsync companion.
+    update_information: str = ""
+    #: Optional package basename template with name, version, arch and platform placeholders.
+    filename: str = ""
 
 
 @dataclass(frozen=True)
@@ -143,6 +149,10 @@ class Target:
     tools: tuple[str, ...] = ()
     #: Deployment-root-relative patterns removed before packaging and final signing.
     exclude: tuple[str, ...] = ()
+    #: Resolved shared installation preferences for this target.
+    installation: Installation | None = None
+    #: Explicit native option keys used to preserve legacy override precedence.
+    option_fields: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -161,6 +171,8 @@ class Config:
     workspace: Path
     #: Root containing per-target package and checksum files.
     output: Path
+    #: Optional shared installation preferences, absent for legacy configurations.
+    installation: Installation | None = None
 
 
 @dataclass(frozen=True)

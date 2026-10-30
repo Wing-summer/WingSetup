@@ -12,7 +12,8 @@ from typing import Callable, Literal
 from .core import PackageBackend
 from .model import BackendOptions
 from .validation import ConfigPaths
-from .backends import appimage, aur, deb, flatpak, inno, macos, makeself, script
+from .installation import INNO_FEATURES, LINUX_FEATURES, MAC_FEATURES
+from .backends import appimage, archive, arch, aur, deb, rpm, flatpak, inno, macos, makeself, script
 
 
 @dataclass(frozen=True)
@@ -29,15 +30,20 @@ class BackendRegistration:
     layout: str
     #: Output category exposed during target discovery.
     kind: Literal["package", "recipe"] = "package"
+    #: Shared installation fields the backend can implement.
+    installation_features: frozenset[str] = frozenset({"license_file"})
 
 
 #: Built-in factories, typed option parsers, and platform discovery capabilities.
 BACKENDS: dict[str, BackendRegistration] = {
-    "appimage": BackendRegistration(appimage.AppImageBackend, appimage.parse_options, ("Linux",), "linux"),
-    "flatpak": BackendRegistration(flatpak.FlatpakBackend, flatpak.parse_options, ("Linux",), "flatpak"),
-    "deb": BackendRegistration(deb.DebBackend, deb.parse_options, ("Linux",), "deb"),
-    "inno": BackendRegistration(inno.InnoBackend, inno.parse_options, ("Windows",), "windows"),
-    "macos": BackendRegistration(macos.MacOSBackend, macos.parse_options, ("Darwin",), "macos"),
+    "archive": BackendRegistration(archive.ArchiveBackend, archive.parse_options, ("Linux", "FreeBSD", "Darwin"), "portable"),
+    "appimage": BackendRegistration(appimage.AppImageBackend, appimage.parse_options, ("Linux",), "linux", installation_features=LINUX_FEATURES),
+    "flatpak": BackendRegistration(flatpak.FlatpakBackend, flatpak.parse_options, ("Linux",), "flatpak", installation_features=LINUX_FEATURES),
+    "rpm": BackendRegistration(rpm.RpmBackend, rpm.parse_options, ("Linux",), "linux", installation_features=LINUX_FEATURES),
+    "arch": BackendRegistration(arch.ArchBackend, arch.parse_options, ("Linux",), "linux", installation_features=LINUX_FEATURES),
+    "deb": BackendRegistration(deb.DebBackend, deb.parse_options, ("Linux",), "deb", installation_features=LINUX_FEATURES),
+    "inno": BackendRegistration(inno.InnoBackend, inno.parse_options, ("Windows",), "windows", installation_features=INNO_FEATURES),
+    "macos": BackendRegistration(macos.MacOSBackend, macos.parse_options, ("Darwin",), "macos", installation_features=MAC_FEATURES),
     "aur": BackendRegistration(aur.AurBackend, aur.parse_options, ("any",), "recipe", "recipe"),
     "makeself": BackendRegistration(makeself.MakeselfBackend, makeself.parse_options, ("Linux", "Darwin"), "portable"),
     "script": BackendRegistration(script.ScriptBackend, script.parse_options, ("any",), "recipe", "recipe"),

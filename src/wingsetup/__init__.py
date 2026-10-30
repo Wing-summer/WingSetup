@@ -7,7 +7,8 @@
 from .console import Console, get_console
 from .core import BuildContext, CommandRunner, PackageBackend, ProjectHooks
 from .model import Artifact, SetupError
+from .install_model import Installation, InstallationIcons, FileType, Protocol, ContextMenu
 from .script_paths import ScriptPaths, paths
 
 #: Public symbols intentionally exported by this package.
-__all__ = ["Artifact", "BuildContext", "CommandRunner", "PackageBackend", "ProjectHooks", "SetupError", "ScriptPaths", "paths", "Console", "get_console"]
+__all__ = ["Artifact", "BuildContext", "CommandRunner", "PackageBackend", "ProjectHooks", "SetupError", "ScriptPaths", "paths", "Console", "get_console", "Installation", "InstallationIcons", "FileType", "Protocol", "ContextMenu"]

@@ -82,6 +82,8 @@ class AppImageBackend(PackageBackend):
         errors = list(common_check(ctx))
         for tool in (opts.linuxdeploy, opts.appimagetool, "desktop-file-validate"):
             errors.extend(tool_missing(tool))
+        if opts.update_information:
+            errors.extend(tool_missing("zsyncmake"))
         for plugin in opts.plugins:
             errors.extend(tool_missing(f"linuxdeploy-plugin-{plugin}"))
         if opts.runtime_file is not None and not ctx.resolve_path(opts.runtime_file).is_file():
@@ -164,16 +166,29 @@ class AppImageBackend(PackageBackend):
         app = ctx.config.application
         if not (ctx.deploy_dir / "AppRun").is_file():
             raise SetupError("AppDir is missing AppRun")
-        output = ctx.config.output / ctx.target.name / f"{app.name}-{app.version}-{ctx.target.arch}.AppImage"
+        filename = opts.filename or f"{app.name}-{app.version}-{ctx.target.arch}.AppImage"
+        for key, value in {"name": app.name, "version": app.version, "arch": ctx.target.arch, "platform": "linux"}.items():
+            filename = filename.replace("{" + key + "}", value)
+        output = ctx.config.output / ctx.target.name / filename
         validate_elf(ctx.deploy_dir / "usr/bin" / ctx.executable_name, ctx.target.arch)
         if output.exists():
             raise SetupError(f"Output already exists: {output}")
+        if opts.update_information and output.with_name(output.name + ".zsync").exists():
+            raise SetupError("Requested zsync output already exists")
         args = [opts.appimagetool]
+        if opts.update_information:
+            args.extend(["--updateinformation", opts.update_information])
         if opts.runtime_file is not None:
             args.extend(["--runtime-file", str(ctx.resolve_path(opts.runtime_file))])
         ctx.run([*args, str(ctx.deploy_dir), str(output)],
                 env={"ARCH": ctx.target.arch, "VERSION": app.version})
-        return (artifact(ctx, output, "appimage"),)
+        result = [artifact(ctx, output, "appimage")]
+        if opts.update_information:
+            companion = output.with_name(output.name + ".zsync")
+            if not companion.is_file():
+                raise SetupError("appimagetool did not generate the requested .zsync companion")
+            result.append(artifact(ctx, companion, "appimage.zsync"))
+        return tuple(result)
 
 
 
@@ -194,7 +209,7 @@ def parse_options(opts: dict[str, object], paths: ConfigPaths) -> AppImageOption
         SetupError: An option is unknown, has an invalid type, or violates backend
             constraints.
     """
-    fields(opts, "linuxdeploy appimagetool plugins libraries environment dependency_dirs runtime_file qt_platforms exclude_libraries", "options")
+    fields(opts, "linuxdeploy appimagetool plugins libraries environment dependency_dirs runtime_file qt_platforms exclude_libraries update_information filename", "options")
     environment = mapping(opts.get("environment", {}), "environment")
     dependency_dirs = strings(opts.get("dependency_dirs", []), "dependency_dirs")
     if any(Path(p).is_absolute() or ".." in Path(p).parts for p in dependency_dirs):
@@ -204,6 +219,12 @@ def parse_options(opts: dict[str, object], paths: ConfigPaths) -> AppImageOption
         raise SetupError("qt_platforms must contain wayland, xcb, or offscreen")
     if platforms and "qt" not in strings(opts.get("plugins", []), "plugins"):
         raise SetupError("qt_platforms requires plugins: [qt]")
+    filename = "" if "filename" not in opts else string(opts["filename"], "filename")
+    checked = filename
+    for key in ("name", "version", "arch", "platform"):
+        checked = checked.replace("{" + key + "}", "value")
+    if filename and (not filename.endswith(".AppImage") or any(char in checked for char in '/\\{}\r\n\0')):
+        raise SetupError("AppImage filename must be a .AppImage basename with only name/version/arch/platform placeholders")
     options = AppImageOptions(
         paths.tool(opts.get("linuxdeploy", "linuxdeploy"), "linuxdeploy"),
         paths.tool(opts.get("appimagetool", "appimagetool"), "appimagetool"),
@@ -213,5 +234,7 @@ def parse_options(opts: dict[str, object], paths: ConfigPaths) -> AppImageOption
         dependency_dirs,
         None if opts.get("runtime_file") is None else paths.resolve(opts["runtime_file"], "runtime_file"),
         platforms, strings(opts.get("exclude_libraries", []), "exclude_libraries"),
+        "" if "update_information" not in opts else string(opts["update_information"], "update_information"),
+        filename,
     )
     return options

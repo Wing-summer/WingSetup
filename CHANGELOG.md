@@ -8,6 +8,15 @@ a version entry does not imply publication to a package index.
 
 ### Added / 新增
 
+- 新增默认全量 Qt 模式的可复用发布工作流、校验和清单、FreeBSD VM 与通用 tar.gz 归档，以及 AppImage zsync 产物。
+  Add an all-builds Qt release workflow, checksum manifests, FreeBSD VM execution, portable tar.gz archives, and AppImage zsync artifacts.
+
+- 共享安装偏好、平台图标、候选文件/URL 关联、Inno 可选 PATH/自启/右键及安装生命周期验收。
+  Shared installer preferences, platform icons, candidate file/URL handlers, optional Inno PATH/startup/Explorer integration, and installer lifecycle acceptance.
+
+- RPM 与 Arch `.pkg.tar.zst` 二进制后端、Linux aarch64 原生及 riscv64 QEMU 的基础/Qt 打包测试。
+  RPM and Arch binary backends, with basic/Qt packaging tests on native Linux aarch64 and emulated riscv64.
+
 - macOS Intel 独立打包目标与原生启动 CI，以及 Ubuntu 22.04/26.04 双 LTS 打包基准。
   Separate macOS Intel packaging/native-launch CI and Ubuntu 22.04/26.04 LTS packaging baselines.
 

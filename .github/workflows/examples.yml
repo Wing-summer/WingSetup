@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   plan:
-    name: Check all 24 declared cases
+    name: Check all 41 declared cases
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
@@ -47,6 +47,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - id: basic-portable
+            runner: ubuntu-26.04
+            qt: false
+          - id: basic-portable-lts-old
+            runner: ubuntu-22.04
+            qt: false
           - id: basic-appimage
             runner: ubuntu-26.04
             qt: false
@@ -83,6 +89,18 @@ jobs:
           - id: qt-appimage-lts-old
             runner: ubuntu-22.04
             qt: true
+          - id: basic-rpm
+            runner: ubuntu-26.04
+            qt: false
+          - id: basic-rpm-lts-old
+            runner: ubuntu-22.04
+            qt: false
+          - id: qt-rpm
+            runner: ubuntu-26.04
+            qt: true
+          - id: qt-rpm-lts-old
+            runner: ubuntu-22.04
+            qt: true
     defaults:
       run:
         shell: bash
@@ -108,6 +126,86 @@ jobs:
         env:
           EXAMPLE_QT: ${{ matrix.qt }}
         run: '"$WINGSETUP_PYTHON" ci/prepare.py linux'
+
+      - name: Build, package, verify checksums, and launch the example
+        env:
+          EXAMPLE_CASE: ${{ matrix.id }}
+        run: '"$WINGSETUP_PYTHON" ci/examples.py --case "$EXAMPLE_CASE"'
+
+      - name: Upload this case's execution receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: receipt-${{ matrix.id }}
+          path: .ci-results/${{ matrix.id }}.json
+          include-hidden-files: true
+          if-no-files-found: warn
+
+      - name: Upload packages and validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}
+          path: examples/**/dist/
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Preserve failed staging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}-diagnostics
+          path: |
+            examples/**/.wingsetup/**/commands.log
+            examples/**/.wingsetup/**/failure.log
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  arm:
+    name: Native ARM64 / ${{ matrix.runner }} / ${{ matrix.id }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: basic-rpm-arm64
+            runner: ubuntu-26.04-arm
+            qt: false
+          - id: basic-rpm-arm64-lts-old
+            runner: ubuntu-22.04-arm
+            qt: false
+          - id: basic-deb-arm64
+            runner: ubuntu-26.04-arm
+            qt: false
+          - id: basic-deb-arm64-lts-old
+            runner: ubuntu-22.04-arm
+            qt: false
+          - id: qt-rpm-arm64
+            runner: ubuntu-26.04-arm
+            qt: true
+          - id: qt-rpm-arm64-lts-old
+            runner: ubuntu-22.04-arm
+            qt: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Select Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - name: Install framework locally
+        uses: ./.github/actions/python-env
+
+      - name: Prepare native Linux packaging tools
+        env:
+          EXAMPLE_QT: ${{ matrix.qt }}
+        run: '"$WINGSETUP_PYTHON" ci/prepare.py arm'
 
       - name: Build, package, verify checksums, and launch the example
         env:
@@ -266,10 +364,15 @@ jobs:
       - name: Prepare native packaging tools
         run: '"$WINGSETUP_PYTHON" ci/prepare.py native'
 
-      - name: Build every native format and launch archived payloads
+      - name: Build packages and verify native payloads and Windows installation
         env:
           EXAMPLE_CASE: ${{ matrix.id }}
-        run: '"$WINGSETUP_PYTHON" ci/examples.py --case "$EXAMPLE_CASE"'
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            "$WINGSETUP_PYTHON" ci/examples.py --case "$EXAMPLE_CASE" --verify-installation
+          else
+            "$WINGSETUP_PYTHON" ci/examples.py --case "$EXAMPLE_CASE"
+          fi
 
       - name: Upload this case's execution receipt
         if: always()
@@ -296,6 +399,7 @@ jobs:
           path: |
             examples/**/.wingsetup/**/commands.log
             examples/**/.wingsetup/**/failure.log
+            examples/**/dist/**/installation-validation/**
           include-hidden-files: true
           if-no-files-found: ignore
 
@@ -310,11 +414,22 @@ jobs:
       matrix:
         include:
           - id: basic-aur-release
+            qt: false
           - id: basic-aur-git
+            qt: false
           - id: basic-scripts
+            qt: false
+          - id: basic-arch
+            qt: false
+          - id: qt-arch
+            qt: true
     steps:
       - name: Prepare the disposable Arch container
-        run: pacman -Syu --noconfirm git python python-pip
+        run: pacman -Syu --noconfirm git python python-pip desktop-file-utils shared-mime-info
+
+      - name: Prepare distro Qt for the Widgets package
+        if: matrix.qt
+        run: pacman -S --noconfirm cmake ninja qt6-base qt6-tools qt6-svg
 
       - name: Check out source
         uses: actions/checkout@v7
@@ -322,7 +437,7 @@ jobs:
       - name: Install framework locally
         run: python ci/environment.py
 
-      - name: Export and validate recipes as an unprivileged user
+      - name: Package binaries and validate recipes as an unprivileged user
         env:
           EXAMPLE_CASE: ${{ matrix.id }}
         run: |
@@ -339,17 +454,72 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
 
-      - name: Upload AUR and script recipes
+      - name: Upload Arch packages and recipes
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.id }}
-          path: examples/basic/dist/
+          path: examples/**/dist/
           if-no-files-found: error
 
+  riscv:
+    name: QEMU riscv64 / ${{ matrix.id }}
+    needs: plan
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: basic-rpm-riscv64
+            qt: false
+          - id: basic-deb-riscv64
+            qt: false
+          - id: qt-rpm-riscv64
+            qt: true
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Build, package and launch under QEMU riscv64
+        uses: uraimo/run-on-arch-action@v3
+        with:
+          arch: none
+          distro: none
+          base_image: --platform=linux/riscv64 riscv64/ubuntu:26.04
+          env: |
+            EXAMPLE_CASE: ${{ matrix.id }}
+            EXAMPLE_QT: ${{ matrix.qt }}
+            GITHUB_RUN_ID: ${{ github.run_id }}
+            GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+            GITHUB_SHA: ${{ github.sha }}
+          install: |
+            apt-get update
+            apt-get install -y python3 python3-venv python3-pip build-essential cmake ninja-build rpm libarchive-tools desktop-file-utils shared-mime-info
+          run: |
+            python3 ci/environment.py
+            .venv-ci/bin/python ci/platform_case.py --case "$EXAMPLE_CASE"
+
+      - name: Upload this case's execution receipt
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: receipt-${{ matrix.id }}
+          path: .ci-results/${{ matrix.id }}.json
+          include-hidden-files: true
+          if-no-files-found: warn
+
+      - name: Upload RISC-V packages and validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.id }}
+          path: examples/**/dist/
+          if-no-files-found: error
+          compression-level: 0
+
   all-examples:
-    name: All 24 example cases passed
+    name: All 41 example cases passed
     if: always()
-    needs: [plan, linux, flatpak, native, recipes]
+    needs: [plan, linux, arm, riscv, flatpak, native, recipes]
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:

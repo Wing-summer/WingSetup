@@ -62,3 +62,38 @@ targets:
     resources:
       - source: hello.c
         destination: source/hello.c
+  rpm:
+    backend: rpm
+    arch: x86_64
+    options:
+      package_name: wingsetup-basic
+  arch:
+    backend: arch
+    arch: x86_64
+    options:
+      package_name: wingsetup-basic
+  rpm-arm64:
+    backend: rpm
+    arch: aarch64
+    options:
+      package_name: wingsetup-basic
+  rpm-riscv64:
+    backend: rpm
+    arch: riscv64
+    options:
+      package_name: wingsetup-basic
+  deb-arm64:
+    backend: deb
+    arch: aarch64
+    options:
+      package_name: wingsetup-basic
+      maintainer: wingsummer
+  deb-riscv64:
+    backend: deb
+    arch: riscv64
+    options:
+      package_name: wingsetup-basic
+      maintainer: wingsummer
+  portable:
+    backend: archive
+    arch: x86_64

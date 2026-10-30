@@ -23,6 +23,7 @@ from wingsetup.config import load_config
 from wingsetup.core import run_target
 from wingsetup.model import AppImageOptions, Artifact, Config, SetupError, Target
 from wingsetup.registry import BACKENDS
+from wingsetup.install_model import Installation
 from wingsetup.platforms import normalize_arch
 from wingsetup.backends.inno import InnoOptions
 from wingsetup.backends.macos import MacOSOptions
@@ -46,7 +47,7 @@ class ExampleCase:
     config: str
     #: Target selected from that configuration.
     target: str
-    #: Provisioning group: linux, flatpak, native, or recipes.
+    #: Provisioning group distinguishing Linux, sandbox, native, Arch, ARM, and QEMU jobs.
     group: str
     #: GitHub runner label matching the target platform and architecture.
     runner: str
@@ -88,7 +89,7 @@ def load_cases() -> tuple[ExampleCase, ...]:
                            string(item.get("target"), "target"), string(
                                item.get("group"), "group"),
                            string(item.get("runner"), "runner"), qt)
-        if case.group not in {"linux", "flatpak", "native", "recipes"}:
+        if case.group not in {"linux", "flatpak", "native", "recipes", "arm", "riscv"}:
             raise SetupError(f"Unknown example group: {case.group}")
         if not (ROOT / case.config).resolve().is_relative_to(ROOT / "examples"):
             raise SetupError("CI configurations must live in examples")
@@ -112,10 +113,11 @@ def load_cases() -> tuple[ExampleCase, ...]:
         raise SetupError(
             f"Incomplete example coverage: targets={expected - configured}, backends={set(BACKENDS) - backends}")
     for case in cases:
-        if case.group in {"linux", "flatpak"}:
+        if case.group in {"linux", "flatpak", "arm"}:
             runners = {entry.runner for entry in cases
                        if (entry.config, entry.target) == (case.config, case.target)}
-            if runners != {"ubuntu-22.04", "ubuntu-26.04"}:
+            expected_runners = {"ubuntu-22.04-arm", "ubuntu-26.04-arm"} if case.group == "arm" else {"ubuntu-22.04", "ubuntu-26.04"}
+            if runners != expected_runners:
                 raise SetupError(f"Incomplete example coverage: LTS endpoints for {case.id}: {runners}")
     return tuple(cases)
 
@@ -132,11 +134,13 @@ def expected_formats(case: ExampleCase) -> tuple[str, ...]:
     config = load_config(ROOT / case.config)
     target = next(
         target for target in config.targets if target.name == case.target)
+    if isinstance(target.options, AppImageOptions):
+        return ("appimage", "appimage.zsync") if target.options.update_information else ("appimage",)
     if isinstance(target.options, InnoOptions):
         return target.options.formats
     if isinstance(target.options, MacOSOptions):
         return tuple("app.zip" if name == "app" else name for name in target.options.formats)
-    return ({"appimage": ("appimage",), "flatpak": ("flatpak",), "deb": ("deb",),
+    return ({"appimage": ("appimage",), "flatpak": ("flatpak",), "deb": ("deb",), "rpm": ("rpm",), "arch": ("pkg.tar.zst",),
              "makeself": ("makeself",), "aur": ("aur",), "script": ("script",)}
             .get(target.backend, ("tar.gz",)))
 
@@ -156,7 +160,7 @@ def output_labels(case: ExampleCase) -> str:
     if isinstance(target.options, MakeselfOptions):
         return "." + target.options.suffix
     labels = {"appimage": ".AppImage", "flatpak": ".flatpak", "deb": ".deb",
-              "zip": ".zip", "app.zip": ".app.zip", "dmg": ".dmg",
+              "rpm": ".rpm", "pkg.tar.zst": ".pkg.tar.zst", "zip": ".zip", "app.zip": ".app.zip", "dmg": ".dmg",
               "inno": "Inno .exe", "aur": "PKGBUILD + .SRCINFO",
               "script": "Python/shell recipe", "tar.gz": ".tar.gz"}
     return ", ".join(labels.get(name, name) for name in expected_formats(case))
@@ -176,7 +180,7 @@ def validate_workflow(cases: tuple[ExampleCase, ...]) -> None:
         (ROOT / ".github/workflows/examples.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
     jobs = mapping(mapping(document, "workflow").get("jobs"), "jobs")
     observed: set[str] = set()
-    for group in ("linux", "flatpak", "native", "recipes"):
+    for group in ("linux", "flatpak", "native", "recipes", "arm", "riscv"):
         job = mapping(jobs.get(group), group)
         strategy = mapping(job.get("strategy"), "strategy")
         matrix = mapping(strategy.get("matrix"), "matrix")
@@ -190,7 +194,7 @@ def validate_workflow(cases: tuple[ExampleCase, ...]) -> None:
             runner = entry.get("runner", job.get("runs-on"))
             if runner != case.runner:
                 raise SetupError(f"Workflow runner differs for {identity}")
-            if group == "linux" and entry.get("qt") != str(case.qt).lower():
+            if group in {"linux", "arm", "recipes", "riscv"} and entry.get("qt") != str(case.qt).lower():
                 raise SetupError(
                     f"Workflow Qt preparation differs for {identity}")
             if group == "native":
@@ -232,14 +236,14 @@ def coverage_summary(cases: tuple[ExampleCase, ...]) -> str:
              "| --- | --- | --- | --- |"]
     for case in cases:
         formats = expected_formats(case)
-        launch = "ZIP payload only / 仅 ZIP 载荷" if "inno" in formats else "Not executed / 不执行" if formats[0] in {
+        launch = "ZIP + install/upgrade/uninstall required / 均须通过" if "inno" in formats else "Not executed / 不执行" if formats[0] in {
             "aur", "script"} else "Required / 必须通过"
         if requires_wayland(case):
             launch = "Offscreen + Wayland required / 两者均须通过"
         lines.append(
-            f"| {case.id} | {case.runner} | {output_labels(case)} | {launch} |")
+            f"| {case.id} | {case.runner}{' / QEMU riscv64' if case.group == 'riscv' else ''} | {output_labels(case)} | {launch} |")
     lines += ["", f"Total / 总计: **{len(cases)} cases**; all include SHA-256 checks. / 全部检查 SHA-256。",
-              "Installer execution, Developer ID/notarization, universal2 are outside this baseline. / 本基准不执行安装器，不覆盖 Developer ID/公证和 universal2。"]
+              "Installer execution is limited to the explicit Windows fixture; Developer ID/notarization and universal2 are outside this baseline. / 安装器仅在显式 Windows 示例中执行；不覆盖 Developer ID/公证和 universal2。"]
     return "\n".join(lines)
 
 
@@ -255,6 +259,7 @@ def write_receipt(case: ExampleCase, result: dict[str, object]) -> None:
     value = {**result, "case": case.id, "config": case.config, "target": case.target,
              "runner": case.runner,
              "host": platform.system(), "arch": platform.machine(),
+             "execution": "qemu" if case.group == "riscv" else "container" if case.group == "recipes" else "native",
              "run_id": os.environ.get("GITHUB_RUN_ID", "local"),
              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", "local"),
              "commit": os.environ.get("GITHUB_SHA", "local")}
@@ -293,11 +298,18 @@ def report_results(cases: tuple[ExampleCase, ...], directory: Path) -> bool:
                 integrity = bool(evidence) and all(
                     item.get("checksum") is True for item in evidence)
                 required = [item for item in evidence if item.get(
-                    "format") not in {"inno", "aur", "script"}]
+                    "format") not in {"inno", "aur", "script", "appimage.zsync"}]
                 launched = all(item.get("launch") is True for item in required)
                 if requires_wayland(case):
                     launched = launched and any(item.get("wayland") is True for item in evidence)
-                complete = current and result.get("runner") == case.runner and result.get("case") == case.id and result.get(
+                config = load_config(ROOT / case.config)
+                target = next(target for target in config.targets if target.name == case.target)
+                architecture = normalize_arch(str(result.get("arch", "")))
+                execution = "qemu" if case.group == "riscv" else "container" if case.group == "recipes" else "native"
+                platform_matches = (target.arch == "any" or architecture == target.arch) and result.get("execution") == execution
+                installation = mapping(result.get("installation", {}), "installation evidence")
+                installed = case.id != "qt-windows" or all(installation.get(key) is True for key in ("installed", "upgraded", "uninstalled"))
+                complete = current and installed and platform_matches and result.get("runner") == case.runner and result.get("case") == case.id and result.get(
                     "status") == "passed" and actual == set(formats) and integrity and launched
                 if complete:
                     passed += 1
@@ -305,14 +317,14 @@ def report_results(cases: tuple[ExampleCase, ...], directory: Path) -> bool:
                     checksum = "PASS"
                     launch = "Offscreen + Wayland PASS" if requires_wayland(case) else "PASS" if required else "Not executed / 不执行"
                     if "inno" in formats:
-                        launch = "ZIP PASS; installer not run / 安装器未执行"
+                        launch = "ZIP + install/upgrade/uninstall PASS"
                 else:
                     status = "FAIL / 失败" if result.get(
                         "status") == "failed" else "INVALID / 证据不完整"
             except (OSError, ValueError, SetupError):
                 status = "INVALID / 无效执行记录"
         rows.append(
-            f"| {case.id} | {case.runner} | {status} | {output_labels(case)} | {checksum} | {launch} |")
+            f"| {case.id} | {case.runner}{' / QEMU riscv64' if case.group == 'riscv' else ''} | {status} | {output_labels(case)} | {checksum} | {launch} |")
     raw_jobs: object = json.loads(os.environ.get("EXAMPLE_JOB_RESULTS", "{}"))
     jobs = mapping(raw_jobs, "job results")
     successful_jobs = all(mapping(value, "job").get(
@@ -421,7 +433,8 @@ def requires_wayland(case: ExampleCase) -> bool:
     return isinstance(target.options, AppImageOptions) and "wayland" in target.options.qt_platforms
 
 
-def verify_archive(artifact: Artifact, root: Path, marker: str, executable: str, *, wayland: bool = False) -> None:
+def verify_archive(artifact: Artifact, root: Path, marker: str, executable: str, *, wayland: bool = False,
+                   installation: Installation | None = None, app_id: str = "") -> None:
     """Inspect and launch an archived example without invoking installation logic.
 
     Args:
@@ -430,15 +443,42 @@ def verify_archive(artifact: Artifact, root: Path, marker: str, executable: str,
         marker: Expected application launch success message.
         executable: Entry filename expected in portable native packages.
         wayland: Require an additional real Wayland launch for the AppImage.
+        installation: Expected integration metadata, if configured.
+        app_id: Export namespace used for expected desktop and MIME files.
     """
     if artifact.format == "appimage":
         command([str(artifact.path), "--appimage-extract-and-run",
                 "--smoke"], marker=marker)
+        if installation is not None:
+            from desktop_metadata import linux
+            subprocess.run([str(artifact.path), "--appimage-extract"], cwd=root, check=True, stdout=subprocess.DEVNULL)
+            linux(root / "squashfs-root/usr", installation, app_id)
     elif artifact.format == "deb":
         command(["dpkg-deb", "--extract", str(artifact.path), str(root)])
         command(
             [str(next((root / "usr/lib").glob(f"*/bin/{executable}")))], marker=marker)
         command(["dpkg-deb", "--info", str(artifact.path)])
+        if installation is not None:
+            from desktop_metadata import linux
+            linux(root / "usr", installation, app_id)
+    elif artifact.format in {"rpm", "pkg.tar.zst"}:
+        root.mkdir(parents=True, exist_ok=True)
+        command(["bsdtar", "-xf", str(artifact.path), "-C", str(root)])
+        if artifact.format == "rpm":
+            database = root / ".rpmdb"
+            command(["rpmdb", "--dbpath", str(database), "--initdb"])
+            metadata = command(["rpm", "--dbpath", str(database), "-qp", "--queryformat", "%{ARCH}", str(artifact.path)]).strip()
+            if normalize_arch(metadata) != artifact.arch:
+                raise SetupError("RPM metadata architecture differs from the target")
+        else:
+            info = (root / ".PKGINFO").read_text(encoding="utf-8")
+            if f"arch = {artifact.arch}" not in info:
+                raise SetupError("Arch metadata architecture differs from the target")
+            command(["pacman", "-Qip", str(artifact.path)])
+        command([str(root / "usr/bin" / executable), "--smoke"], marker=marker)
+        if installation is not None:
+            from desktop_metadata import linux
+            linux(root / "usr", installation, app_id)
     elif artifact.format == "makeself":
         command([str(artifact.path), "--check"])
         command([str(artifact.path), "--noexec",
@@ -459,6 +499,9 @@ def verify_archive(artifact: Artifact, root: Path, marker: str, executable: str,
             command(["codesign", "--verify", "--deep", "--strict", str(bundle)])
             command([str(bundle / "Contents/MacOS" / executable),
                     "--smoke"], marker=marker)
+            if installation is not None:
+                from desktop_metadata import macos
+                macos(bundle, installation, app_id)
     elif artifact.format == "dmg":
         mount = root / "mounted"
         command(["hdiutil", "attach", "-readonly", "-nobrowse",
@@ -468,6 +511,9 @@ def verify_archive(artifact: Artifact, root: Path, marker: str, executable: str,
             command(["codesign", "--verify", "--deep", "--strict", str(bundle)])
             command([str(bundle / "Contents/MacOS" / executable),
                     "--smoke"], marker=marker)
+            if installation is not None:
+                from desktop_metadata import macos
+                macos(bundle, installation, app_id)
         finally:
             command(["hdiutil", "detach", str(mount)])
     elif artifact.format in {"aur", "script", "tar.gz"}:
@@ -484,11 +530,12 @@ def verify_archive(artifact: Artifact, root: Path, marker: str, executable: str,
             command([str(root / executable)], marker=marker)
 
 
-def run_case(case: ExampleCase) -> None:
+def run_case(case: ExampleCase, *, verify_installation: bool = False) -> None:
     """Package a declared example, verify outputs, and record validation evidence.
 
     Args:
         case: Coverage-manifest entry matching the current native runner.
+        verify_installation: Explicitly enable ephemeral Windows installer acceptance.
 
     Raises:
         SetupError: Output integrity, expected formats, metadata, or launch checks fail.
@@ -521,9 +568,10 @@ def run_case(case: ExampleCase) -> None:
         if digest != output.sha256 or sidecar != f"{digest}  {output.path.name}":
             raise SetupError("Artifact SHA-256 or checksum sidecar differs")
         with tempfile.TemporaryDirectory(prefix="wingsetup-verify-") as directory:
-            verify_archive(output, Path(directory), marker, entry, wayland=requires_wayland(case))
+            verify_archive(output, Path(directory), marker, entry, wayland=requires_wayland(case),
+                           installation=target.installation or config.installation, app_id=config.application.id)
         checks.append({"path": str(output.path), "format": output.format, "sha256": digest,
-                       "checksum": True, "wayland": requires_wayland(case), "launch": output.format not in {"inno", "aur", "script", "flatpak"}})
+                       "checksum": True, "wayland": requires_wayland(case), "launch": output.format not in {"inno", "aur", "script", "flatpak", "appimage.zsync"}})
     if target.backend == "flatpak":
         work = max(config.workspace.glob(
             f"{target.name}-*"), key=lambda path: path.stat().st_mtime_ns)
@@ -534,9 +582,22 @@ def run_case(case: ExampleCase) -> None:
         command(["flatpak", "build", "--env=QT_QPA_PLATFORM=offscreen",
                 str(work / "root"), f"/app/bin/{entry}", "--smoke"], marker=marker)
         checks[0]["launch"] = True
+        if target.installation or config.installation:
+            from desktop_metadata import linux
+            expected_installation = target.installation or config.installation
+            assert expected_installation is not None
+            linux(work / "root/files", expected_installation, config.application.id)
+    installation_evidence: dict[str, bool] = {}
+    if verify_installation:
+        if case.id != "qt-windows":
+            raise SetupError("Installer acceptance is only defined for qt-windows")
+        from windows_installation import verify
+        installer = next(output.path for output in outputs if output.format == "inno")
+        installation_evidence = verify(config, target, installer,
+                                       lambda args: command(args, marker=marker))
     destination = config.output / target.name / "validation.json"
     result: dict[str, object] = {"case": case.id,
-                                 "status": "passed", "artifacts": checks}
+                                 "status": "passed", "artifacts": checks, "installation": installation_evidence}
     destination.write_text(json.dumps(
         result, indent=2) + "\n", encoding="utf-8")
     write_receipt(case, result)
@@ -545,15 +606,18 @@ def run_case(case: ExampleCase) -> None:
 def main() -> None:
     """Emit GitHub matrices or package and verify selected example cases."""
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--verify-installation", action="store_true", help="Explicit Windows example install/upgrade/uninstall checks")
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--matrix", action="store_true")
     selection.add_argument("--coverage", action="store_true")
     selection.add_argument("--report", type=Path)
     selection.add_argument("--case")
     selection.add_argument(
-        "--group", choices=("linux", "flatpak", "native", "recipes"))
+        "--group", choices=("linux", "flatpak", "native", "recipes", "arm", "riscv"))
     arguments = parser.parse_args()
     cases = load_cases()
+    if arguments.verify_installation and arguments.case != "qt-windows":
+        parser.error("--verify-installation requires --case qt-windows")
     if arguments.report is not None:
         if not report_results(cases, arguments.report):
             raise SystemExit(1)
@@ -564,7 +628,7 @@ def main() -> None:
         return
     if arguments.matrix:
         destination = os.environ.get("GITHUB_OUTPUT")
-        for group in ("linux", "flatpak", "native"):
+        for group in ("linux", "flatpak", "native", "recipes", "arm", "riscv"):
             value = json.dumps(
                 {"include": [case.matrix() for case in cases if case.group == group]})
             print(f"{group}={value}")
@@ -578,7 +642,7 @@ def main() -> None:
         raise SetupError("No example case matched")
     for case in selected:
         try:
-            run_case(case)
+            run_case(case, verify_installation=arguments.verify_installation)
         except Exception as exc:
             write_receipt(case, {"status": "failed",
                           "error": str(exc), "artifacts": []})

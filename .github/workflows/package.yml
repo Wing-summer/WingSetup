@@ -1,137 +1,231 @@
 # Copyright (c) 2026, wingsummer
 # SPDX-License-Identifier: BSD-3-Clause
 # See LICENSE in the project root for license information.
-name: Reusable application packaging
-
+name: Reusable application packages
 on:
   workflow_call:
     inputs:
-      runner:
-        description: Native runner label matching the target OS and architecture
-        type: string
-        required: true
-      application_repository:
-        description: Application repository in owner/name form
-        type: string
-        required: true
-      application_ref:
-        description: Reviewed application commit SHA or tag
-        type: string
-        required: true
-      framework_repository:
-        description: WingSetup repository in owner/name form
-        type: string
-        required: true
-      framework_ref:
-        description: Reviewed WingSetup commit SHA or tag
-        type: string
-        required: true
-      config:
-        description: Application-relative YAML configuration path
-        type: string
-        required: true
-      target:
-        description: One named target to package
-        type: string
-        required: true
-      qt_version:
-        description: Optional Qt version; empty skips Qt preparation
+      repository:
+        description: Application repository; defaults to the caller repository
         type: string
         default: ''
-      qt_host:
-        description: Qt host identifier such as linux, windows, or mac
+      ref:
+        description: Application commit or tag; defaults to the triggering commit
         type: string
         default: ''
-      qt_arch:
-        description: Qt toolchain architecture matching the native runner
+      build-config:
+        description: Repository-relative release build YAML
         type: string
-        default: ''
-      qt_modules:
-        description: Optional space-separated Qt module names
+        default: mkinstaller/build.yml
+      builds:
+        description: all or comma-separated build IDs
         type: string
-        default: ''
-      setup_script:
-        description: Optional application-relative trusted preparation script
+        default: all
+      mode:
+        description: qt or plain; qt enables Qt setup and preparation for every selected build
         type: string
-        default: ''
-    secrets:
-      MACOS_SIGN_IDENTITY:
-        required: false
-      MACOS_NOTARY_PROFILE:
-        required: false
-
+        default: qt
+      artifact-prefix:
+        description: Unique prefix when invoking this workflow more than once in a run
+        type: string
+        default: wingsetup
+      framework-ref:
+        description: WingSetup commit or tag; pin this alongside the reusable workflow
+        type: string
+        default: main
+    outputs:
+      artifact-name:
+        description: Download this workflow artifact to obtain release files
+        value: ${{ jobs.collect.outputs.artifact-name }}
+      assets:
+        description: JSON array with file names, SHA-256 values, formats and architectures
+        value: ${{ jobs.collect.outputs.assets }}
+      files:
+        description: Newline-separated release file names
+        value: ${{ jobs.collect.outputs.files }}
+      checksums:
+        description: SHA256SUMS.txt contents
+        value: ${{ jobs.collect.outputs.checksums }}
 permissions:
   contents: read
-
 jobs:
-  package:
-    name: Package ${{ inputs.target }} on ${{ inputs.runner }}
-    timeout-minutes: 60
-    runs-on: ${{ inputs.runner }}
+  plan:
+    name: Validate project build matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      expected: ${{ steps.plan.outputs.expected }}
+      source-ref: ${{ steps.plan.outputs.source-ref }}
     steps:
-      - name: Check out application source
+      - name: Check out WingSetup
         uses: actions/checkout@v7
         with:
-          repository: ${{ inputs.application_repository }}
-          ref: ${{ inputs.application_ref }}
-          path: application
-          submodules: recursive
-          persist-credentials: false
-
-      - name: Check out reviewed framework source
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ inputs.framework_repository }}
-          ref: ${{ inputs.framework_ref }}
+          repository: Wing-summer/WingSetup
+          ref: ${{ inputs.framework-ref }}
           path: framework
           persist-credentials: false
-
-      - name: Select Python
+      - name: Check out application
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.repository || github.repository }}
+          ref: ${{ inputs.ref || (inputs.repository == '' && github.sha || '') }}
+          path: application
+          persist-credentials: false
+      - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: '3.11'
-
-      - name: Install the requested Qt SDK
-        uses: jurplel/install-qt-action@v4
-        if: inputs.qt_version != ''
-        with:
-          version: ${{ inputs.qt_version }}
-          host: ${{ inputs.qt_host }}
-          arch: ${{ inputs.qt_arch }}
-          modules: ${{ inputs.qt_modules }}
-          cache: true
-
-      - name: Configure the MSVC compiler
-        uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
-
-      - name: Run application-owned tool preparation
-        if: inputs.setup_script != ''
-        working-directory: application
+      - name: Install framework environment
+        shell: bash
+        run: python framework/ci/environment.py
+      - name: Validate and select all requested builds
+        id: plan
         shell: bash
         env:
-          SETUP_SCRIPT: ${{ inputs.setup_script }}
-        run: |
-          case "$SETUP_SCRIPT" in
-            *.ps1) pwsh -File "$SETUP_SCRIPT" ;;
-            *.py) python "$SETUP_SCRIPT" ;;
-            *) bash "$SETUP_SCRIPT" ;;
-          esac
-
-      - name: Package the selected application target
-        uses: ./framework
-        id: package
-        env:
-          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
-          MACOS_NOTARY_PROFILE: ${{ secrets.MACOS_NOTARY_PROFILE }}
+          BUILD_CONFIG: ${{ inputs.build-config }}
+          BUILDS: ${{ inputs.builds }}
+          MODE: ${{ inputs.mode }}
+        run: >-
+          "$WINGSETUP_PYTHON" framework/ci/release.py plan
+          --root application --file "application/$BUILD_CONFIG" --builds "$BUILDS" --mode "$MODE"
+  build:
+    name: Package / ${{ matrix.id }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Check out WingSetup
+        uses: actions/checkout@v7
         with:
-          config: application/${{ inputs.config }}
-          target: ${{ inputs.target }}
-
-      - name: Upload packages, checksums, and artifact report
+          repository: Wing-summer/WingSetup
+          ref: ${{ inputs.framework-ref }}
+          path: framework
+          persist-credentials: false
+      - name: Check out application and submodules
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.repository || github.repository }}
+          ref: ${{ needs.plan.outputs.source-ref }}
+          path: application
+          submodules: recursive
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Set up project Qt SDK
+        if: inputs.mode == 'qt' && matrix.qt_version != '' && matrix.system == 'native'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.qt_version }}
+          arch: ${{ matrix.qt_arch }}
+          modules: ${{ matrix.qt_modules }}
+          cache: true
+      - name: Install framework environment
+        if: matrix.system == 'native'
+        shell: bash
+        run: python framework/ci/environment.py
+      - name: Prepare, build, deploy and package
+        if: matrix.system == 'native'
+        shell: bash
+        env:
+          BUILD_CONFIG: ${{ inputs.build-config }}
+          BUILD_ID: ${{ matrix.id }}
+          MODE: ${{ inputs.mode }}
+        run: >-
+          "$WINGSETUP_PYTHON" framework/ci/release.py build
+          --root application --file "application/$BUILD_CONFIG"
+          --builds "$BUILD_ID" --mode "$MODE"
+          --destination "job-assets/$BUILD_ID"
+      - name: Build inside QEMU riscv64 and copy assets back
+        if: matrix.system == 'riscv64'
+        uses: uraimo/run-on-arch-action@v3
+        with:
+          arch: none
+          distro: none
+          base_image: --platform=linux/riscv64 riscv64/ubuntu:26.04
+          env: ${{ toJSON(matrix.environment) }}
+          install: |
+            apt-get update
+            apt-get install -y python3 python3-venv python3-pip build-essential
+          run: |
+            python3 framework/ci/environment.py
+            framework/.venv-ci/bin/python framework/ci/release.py build --root application --file "application/$BUILD_CONFIG" --builds "$BUILD_ID" --mode "$MODE" --destination "job-assets/$BUILD_ID"
+      - name: Build inside FreeBSD VM and copy assets back
+        if: matrix.system == 'freebsd'
+        uses: vmactions/freebsd-vm@v1
+        env:
+          BUILD_CONFIG: ${{ inputs.build-config }}
+          BUILD_ID: ${{ matrix.id }}
+          MODE: ${{ inputs.mode }}
+        with:
+          release: '14.3'
+          arch: x86_64
+          envs: BUILD_CONFIG BUILD_ID MODE
+          usesh: true
+          prepare: pkg install -y python311 py311-pip
+          run: |
+            python3.11 framework/ci/environment.py
+            framework/.venv-ci/bin/python framework/ci/release.py build --root application --file "application/$BUILD_CONFIG" --builds "$BUILD_ID" --mode "$MODE" --destination "job-assets/$BUILD_ID"
+      - name: Preserve successful build assets and receipt
         uses: actions/upload-artifact@v7
         with:
-          name: package-${{ inputs.target }}-${{ runner.os }}-${{ runner.arch }}
-          path: ${{ steps.package.outputs.artifact-paths }}
+          name: ${{ inputs.artifact-prefix }}-job-${{ matrix.id }}
+          path: job-assets/${{ matrix.id }}/
           if-no-files-found: error
-          compression-level: 0
+      - name: Preserve failed packaging diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-prefix }}-failure-${{ matrix.id }}
+          path: |
+            application/**/.wingsetup/**/commands.log
+            application/**/.wingsetup/**/progress.jsonl
+          include-hidden-files: true
+          if-no-files-found: ignore
+  collect:
+    name: Verify and assemble all release assets
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    outputs:
+      artifact-name: ${{ inputs.artifact-prefix }}-release
+      assets: ${{ steps.collect.outputs.assets }}
+      files: ${{ steps.collect.outputs.files }}
+      checksums: ${{ steps.collect.outputs.checksums }}
+    steps:
+      - name: Check out WingSetup
+        uses: actions/checkout@v7
+        with:
+          repository: Wing-summer/WingSetup
+          ref: ${{ inputs.framework-ref }}
+          path: framework
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Install framework environment
+        shell: bash
+        run: python framework/ci/environment.py
+      - name: Download every build receipt and asset
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ${{ inputs.artifact-prefix }}-job-*
+          path: downloaded-assets
+      - name: Verify completeness, unique file names and SHA-256
+        id: collect
+        shell: bash
+        env:
+          EXPECTED: ${{ needs.plan.outputs.expected }}
+        run: >-
+          "$WINGSETUP_PYTHON" framework/ci/release.py collect
+          --expected "$EXPECTED" --inputs downloaded-assets --destination release-assets
+      - name: Upload files ready for a separate release job
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact-prefix }}-release
+          path: release-assets/
+          if-no-files-found: error

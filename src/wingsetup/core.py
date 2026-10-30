@@ -27,6 +27,7 @@ from typing import Mapping, Sequence, TypeVar, cast
 from .model import Artifact, Config, FlatpakOptions, SetupError, Target
 from .console import get_console, plain_text
 from .filtering import filter_deployment, matches
+from .install_model import Installation
 from .platforms import DeploymentLayout, deployment_layout
 from .script_paths import activate_paths
 
@@ -133,6 +134,11 @@ class BuildContext:
             Configured project source directory.
         """
         return self.config.project.source
+
+    @property
+    def installation(self) -> Installation | None:
+        """Return immutable target-resolved installation preferences."""
+        return self.target.installation or self.config.installation
 
     @property
     def layout(self) -> DeploymentLayout:
@@ -597,9 +603,14 @@ def run_target(config: Config, target: Target,
                     backend.build(ctx, hooks)
                 elif stage == "deploy":
                     backend.deploy(ctx, hooks)
+                    if target.backend not in {"appimage", "flatpak", "deb", "rpm", "arch", "macos", "inno"}:
+                        from .installation import apply_installation
+                        apply_installation(ctx)
                 else:
                     (config.output / target.name).mkdir(parents=True, exist_ok=True)
                     filter_deployment(ctx)
+                    from .installation import validate_staged_installation
+                    validate_staged_installation(ctx)
                     result = backend.package(ctx)
                 action = f"after_{stage}"
                 console.write(f"    HOOK {action}", "detail")
@@ -610,6 +621,8 @@ def run_target(config: Config, target: Target,
                 console.write(f"Stopped; remaining stages will not run. Diagnostics: {work}", "warning")
                 (work / "failure.log").write_text(traceback.format_exc())
                 raise SetupError(f"{target.name}/{stage} failed; work directory: {work}: {exc}") from exc
+        from .installation import write_installation_report
+        write_installation_report(ctx, result)
         report = [{"path": str(item.path), "format": item.format, "arch": item.arch,
                    "sha256": item.sha256, "kind": item.kind} for item in result]
         (work / "artifacts.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -652,7 +665,8 @@ def check_requirements(backend: PackageBackend, ctx: BuildContext) -> tuple[str,
     sdk_build = isinstance(ctx.target.options, FlatpakOptions) and ctx.target.options.mode == "sdk"
     recipe = spec is not None and spec.kind == "recipe"
     tools = ctx.target.tools + (() if sdk_build or recipe else ctx.config.project.tools)
-    errors = list(backend.check(ctx))
+    from .installation import installation_requirements
+    errors = list(backend.check(ctx)) + list(installation_requirements(ctx))
     for tool in tools:
         errors.extend(tool_missing(tool))
     return tuple(dict.fromkeys(errors))

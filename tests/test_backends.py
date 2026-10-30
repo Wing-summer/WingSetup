@@ -18,8 +18,12 @@ from typing import Mapping, Sequence
 from unittest.mock import patch
 
 from wingsetup import BuildContext, CommandRunner, ProjectHooks, SetupError
+from wingsetup.backends.archive import ArchiveBackend, ArchiveOptions
 from wingsetup.backends.aur import AurBackend
 from wingsetup.backends.deb import DebBackend
+from wingsetup.backends.rpm import RpmBackend
+from wingsetup.backends.arch import ArchBackend
+from wingsetup.backends.common import validate_elf
 from wingsetup.backends.inno import InnoBackend, validate_pe
 from wingsetup.backends.macos import MacOSBackend
 from wingsetup.backends.makeself import MakeselfBackend
@@ -29,7 +33,7 @@ from wingsetup.config import load_config
 from wingsetup.core import check_requirements, run_target, deploy_resources
 from wingsetup.model import CopyRule
 from wingsetup.filtering import filter_deployment
-from wingsetup.backends.appimage import deploy_qt_platforms
+from wingsetup.backends.appimage import AppImageBackend, deploy_qt_platforms
 from wingsetup.model import AppImageOptions
 from wingsetup.platforms import deployment_layout, normalize_arch
 
@@ -60,6 +64,13 @@ class NativeRunner(CommandRunner):
             return "x86_64 arm64\n"
         if tuple(args[:3]) == ("xcrun", "notarytool", "submit"):
             return '{"status":"Accepted"}'
+        if args[0] == "rpmbuild":
+            top = Path(next(value.removeprefix("_topdir ") for value in args if value.startswith("_topdir ")))
+            output = top / "RPMS/x86_64/demo.rpm"
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"rpm fixture")
+        if args[0] == "makepkg" and "--config" in args:
+            (cwd / "packages/demo.pkg.tar.zst").write_bytes(b"arch fixture")
         if args[0] == "makepkg":
             return "pkgbase = demo\n\tpkgver = 1.0\npkgname = demo\n"
         if args[0] in ("dpkg-deb", "ditto", "hdiutil"):
@@ -132,6 +143,107 @@ targets:
         (self.root / "work").mkdir(exist_ok=True)
         return BuildContext(loaded, loaded.targets[0], self.root / "work", self.root / "build",
                             self.root / "root", self.runner)
+
+    def test_archive_validates_and_packages_a_native_payload(self) -> None:
+        """Use the portable backend for a native ELF without an installer script."""
+        import tarfile
+        ctx = self.context("archive", "      payload: .\n", extra="    platform: FreeBSD\n")
+        # An explicit small payload avoids including the work tree in this fixture.
+        ctx = dataclasses.replace(ctx, target=dataclasses.replace(ctx.target, options=ArchiveOptions()))
+        backend = ArchiveBackend()
+        backend.deploy(ctx, ProjectHooks())
+        result = backend.package(ctx)
+        self.assertEqual(result[0].format, "tar.gz")
+        with tarfile.open(result[0].path) as stream:
+            self.assertIn("./demo", stream.getnames())
+
+    def test_appimage_update_companion_is_required_and_returned(self) -> None:
+        """Return real zsync artifacts and fail when a requested companion is absent."""
+        ctx = self.context("appimage", "      update_information: 'zsync|https://example.org/demo.AppImage.zsync'\n")
+        ctx.deploy_dir.mkdir()
+        (ctx.deploy_dir / "AppRun").write_text("#!/bin/sh\n")
+        (ctx.config.output / ctx.target.name).mkdir(parents=True)
+        produce = [True]
+
+        def package_tool(arguments: Sequence[str], **_kwargs: object) -> str:
+            """Simulate the packager's output and optional companion using real files.
+
+            Args:
+                arguments: Appimagetool argument list containing the final output path.
+                _kwargs: Unused command execution settings.
+
+            Returns:
+                Empty captured standard output.
+            """
+            destination = Path(arguments[-1])
+            destination.write_bytes(b"AppImage fixture")
+            if produce[0]:
+                destination.with_name(destination.name + ".zsync").write_bytes(b"zsync fixture")
+            return ""
+
+        with patch.object(BuildContext, "run", side_effect=package_tool), patch("wingsetup.backends.appimage.validate_elf"):
+            outputs = AppImageBackend().package(ctx)
+            self.assertEqual([item.format for item in outputs], ["appimage", "appimage.zsync"])
+            for item in outputs:
+                item.path.unlink()
+            produce[0] = False
+            with self.assertRaisesRegex(SetupError, "zsync"):
+                AppImageBackend().package(ctx)
+
+    def test_rpm_stages_usr_payload_and_escapes_spec_macros(self) -> None:
+        """Generate an isolated spec with explicit dependencies and literal metadata."""
+        ctx = self.context("rpm", "      package_name: demo\n      depends: ['libc.so.6()(64bit)']\n")
+        ctx = dataclasses.replace(ctx, config=dataclasses.replace(
+            ctx.config, application=dataclasses.replace(ctx.config.application, summary="literal %{macro}")))
+        backend = RpmBackend()
+        backend.deploy(ctx, ProjectHooks())
+        output = backend.package(ctx)[0]
+        spec = (ctx.work / "rpmbuild/SPECS/demo.spec").read_text(encoding="utf-8")
+        self.assertIn("Summary: literal %%{macro}", spec)
+        self.assertIn("Requires: libc.so.6()(64bit)", spec)
+        self.assertIn('"/usr/bin/demo"', spec)
+        self.assertNotIn('\n"/usr"\n', spec)
+        self.assertEqual(output.format, "rpm")
+        self.assertTrue(output.path.with_name(output.path.name + ".sha256").is_file())
+        invocation = next(args for args in self.runner.commands if args[0] == "rpmbuild")
+        self.assertIn("--target", invocation)
+        self.assertIn("_rpmformat 4", invocation)
+        self.assertIn("_dbpath " + str(ctx.work / "rpmbuild/rpmdb"), invocation)
+        self.assertTrue(any(args[0] == "rpmdb" for args in self.runner.commands))
+        with self.assertRaises(SetupError):
+            self.context("rpm", "      package_name: 'demo\\nName: injected'\n")
+
+    def test_arch_builds_a_binary_package_without_dependency_installation(self) -> None:
+        """Use a local checksummed payload and preserve staged files in makepkg."""
+        ctx = self.context("arch", "      package_name: demo\n      depends: [glibc]\n")
+        backend = ArchBackend()
+        backend.deploy(ctx, ProjectHooks())
+        output = backend.package(ctx)[0]
+        script = (ctx.work / "makepkg/PKGBUILD").read_text(encoding="utf-8")
+        self.assertIn("depends=(glibc)", script)
+        self.assertIn("sha256sums=('", script)
+        self.assertIn("!strip", script)
+        self.assertEqual(output.format, "pkg.tar.zst")
+        invocation = next(args for args in self.runner.commands if args[0] == "makepkg")
+        self.assertIn("--nodeps", invocation)
+        self.assertNotIn("--syncdeps", invocation)
+        self.assertNotIn("--install", invocation)
+
+    def test_riscv64_elf_and_debian_metadata(self) -> None:
+        """Validate RISC-V e_machine and retain riscv64 in Debian control metadata."""
+        binary = self.root / "demo"
+        data = bytearray(binary.read_bytes())
+        data[18:20] = (243).to_bytes(2, "little")
+        binary.write_bytes(data)
+        validate_elf(binary, "riscv64")
+        with self.assertRaises(SetupError):
+            validate_elf(binary, "aarch64")
+        ctx = self.context("deb", "      package_name: demo\n      maintainer: Example\n")
+        ctx = dataclasses.replace(ctx, target=dataclasses.replace(ctx.target, arch="riscv64"))
+        backend = DebBackend()
+        backend.deploy(ctx, ProjectHooks())
+        backend.package(ctx)
+        self.assertIn("Architecture: riscv64", (ctx.deploy_dir / "DEBIAN/control").read_text())
 
     def test_layouts_and_arch_aliases(self) -> None:
         """Normalize architecture aliases and preserve native installation layouts."""

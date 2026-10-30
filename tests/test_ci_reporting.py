@@ -51,6 +51,9 @@ def success_receipts(module: ModuleType, directory: Path) -> None:
     for case in module.load_cases():
         value = {"case": case.id, "status": "passed", "run_id": "local",
                  "run_attempt": "local", "commit": "local", "runner": case.runner,
+                 "arch": next(target.arch for target in module.load_config(ROOT / case.config).targets if target.name == case.target),
+                 "execution": "qemu" if case.group == "riscv" else "container" if case.group == "recipes" else "native",
+                 "installation": {"installed": True, "upgraded": True, "uninstalled": True} if case.id == "qt-windows" else {},
                  "artifacts": [{"format": name, "checksum": True,
                                 "launch": name not in {"inno", "aur", "script"},
                                 "wayland": module.requires_wayland(case)}
@@ -133,6 +136,25 @@ class CIReportTests(unittest.TestCase):
             path.write_text(json.dumps(value), encoding="utf-8")
             self.assertFalse(module.report_results(module.load_cases(), directory))
 
+    def test_cross_architecture_receipts_require_actual_architecture_and_execution(self) -> None:
+        """Reject x86 evidence or native labels submitted for a RISC-V QEMU case."""
+        module = driver()
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {}, clear=True), patch.object(module, "publish_summary"):
+            directory = Path(temporary)
+            success_receipts(module, directory)
+            path = directory / "qt-rpm-riscv64.json"
+            value = json.loads(path.read_text(encoding="utf-8"))
+            value["arch"] = "x86_64"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertFalse(module.report_results(module.load_cases(), directory))
+            value["arch"] = "riscv64"
+            value["execution"] = "native"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertFalse(module.report_results(module.load_cases(), directory))
+            value["execution"] = "qemu"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertTrue(module.report_results(module.load_cases(), directory))
+
     def test_unknown_workflow_case_is_rejected(self) -> None:
         """Reject a workflow edit that replaces a required case with an unknown one."""
         module = driver()
@@ -152,11 +174,11 @@ class CIReportTests(unittest.TestCase):
             success_receipts(module, directory)
             self.assertTrue(module.report_results(
                 module.load_cases(), directory))
-            self.assertIn("24/24", summary.call_args.args[0])
+            self.assertIn(f"{len(module.load_cases())}/{len(module.load_cases())}", summary.call_args.args[0])
             (directory / "qt-macos.json").unlink()
             self.assertFalse(module.report_results(
                 module.load_cases(), directory))
-            self.assertIn("23/24", summary.call_args.args[0])
+            self.assertIn(f"{len(module.load_cases()) - 1}/{len(module.load_cases())}", summary.call_args.args[0])
             self.assertIn("MISSING", summary.call_args.args[0])
 
     def test_incomplete_native_formats_and_failed_launch_do_not_pass(self) -> None:
@@ -234,6 +256,18 @@ class CIReportTests(unittest.TestCase):
                 module.main()
         self.assertEqual(write.call_args.args[0].id, "basic-deb")
         self.assertEqual(write.call_args.args[1]["status"], "failed")
+
+    def test_windows_receipt_requires_explicit_installer_lifecycle_evidence(self) -> None:
+        """Do not count ZIP launching as proof of installation, upgrade, or cleanup."""
+        module = driver()
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {}, clear=True), patch.object(module, "publish_summary"):
+            directory = Path(temporary)
+            success_receipts(module, directory)
+            path = directory / "qt-windows.json"
+            value = json.loads(path.read_text(encoding="utf-8"))
+            value["installation"] = {"installed": True, "upgraded": True}
+            path.write_text(json.dumps(value), encoding="utf-8")
+            self.assertFalse(module.report_results(module.load_cases(), directory))
 
     def test_stale_receipts_or_failed_prerequisite_cannot_turn_the_gate_green(self) -> None:
         """Reject other-run evidence and upstream failures even with complete receipts."""

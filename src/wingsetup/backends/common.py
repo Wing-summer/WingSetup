@@ -13,6 +13,7 @@ import struct
 from pathlib import Path
 
 from ..core import BuildContext, ProjectHooks, deploy_resources
+from ..installation import apply_installation
 from ..model import SetupError
 from ..platforms import normalize_arch
 
@@ -36,8 +37,10 @@ def common_check(ctx: BuildContext) -> tuple[str, ...]:
         errors.append(f"Native architecture required: host={platform.machine()}, target={ctx.target.arch}")
     if not ctx.source_dir.is_dir():
         errors.append(f"Source directory: {ctx.source_dir}")
-    for path in (ctx.config.application.desktop, ctx.config.application.icon):
-        if path is None or not path.is_file():
+    icon = ctx.installation.icons.linux if ctx.installation and ctx.installation.icons.linux else ctx.config.application.icon
+    for path in (ctx.config.application.desktop, icon):
+        generated = path is not None and any(token in str(path) for token in ("{build}", "{work}"))
+        if path is None or (not generated and not path.is_file()):
             errors.append(f"Metadata file: {path}")
     return tuple(errors)
 
@@ -63,7 +66,7 @@ def validate_elf(path: Path, arch: str) -> None:
     if len(header) < 20 or header[:4] != b"\x7fELF" or header[4] != 2 or header[5] not in (1, 2):
         raise SetupError(f"Expected a 64-bit ELF binary: {path}")
     machine = struct.unpack("<H" if header[5] == 1 else ">H", header[18:20])[0]
-    if machine != {"x86_64": 62, "aarch64": 183}[arch]:
+    if machine != {"x86_64": 62, "aarch64": 183, "riscv64": 243}.get(arch):
         raise SetupError(f"Executable architecture does not match {arch}: {path}")
     if not os.access(path, os.X_OK):
         raise SetupError(f"Executable permission missing: {path}")
@@ -124,14 +127,15 @@ def deploy_linux_metadata(ctx: BuildContext, prefix: str) -> None:
         SetupError: Desktop metadata is missing or the icon format is unsupported.
     """
     app = ctx.config.application
-    if app.desktop is None or app.icon is None:
+    icon = ctx.installation.icons.linux if ctx.installation and ctx.installation.icons.linux else app.icon
+    if app.desktop is None or icon is None:
         raise SetupError("Linux desktop packaging requires application.desktop and application.icon")
     ctx.copy(app.desktop, f"{prefix}share/applications/{app.id}.desktop")
-    extension = app.icon.suffix.lower()
+    extension = icon.suffix.lower()
     if extension not in (".png", ".svg"):
         raise SetupError("Icon must be PNG or SVG")
     size = "scalable" if extension == ".svg" else "256x256"
-    ctx.copy(app.icon, f"{prefix}share/icons/hicolor/{size}/apps/{app.id}{extension}")
+    ctx.copy(icon, f"{prefix}share/icons/hicolor/{size}/apps/{app.id}{extension}")
 
 
 def binary_deploy(ctx: BuildContext, hooks: ProjectHooks, prefix: str) -> None:
@@ -151,4 +155,5 @@ def binary_deploy(ctx: BuildContext, hooks: ProjectHooks, prefix: str) -> None:
     deploy_linux_metadata(ctx, prefix)
     deploy_resources(ctx)
     hooks.deploy(ctx)
+    apply_installation(ctx)
     validate_elf(ctx.deploy_dir / f"{prefix}bin/{ctx.executable_name}", ctx.target.arch)

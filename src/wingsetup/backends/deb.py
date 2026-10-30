@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ..core import BuildContext, PackageBackend, ProjectHooks, artifact, deploy_resources
+from ..installation import apply_installation
 from ..model import Artifact, BackendOptions, SetupError
 from ..validation import ConfigPaths, fields, string, strings
 from .common import deploy_linux_metadata, desktop_check, validate_elf
@@ -96,6 +97,7 @@ class DebBackend(PackageBackend):
         deploy_linux_metadata(ctx, "usr/")
         deploy_resources(ctx)
         hooks.deploy(ctx)
+        apply_installation(ctx)
         validate_elf(ctx.app_dir / ctx.executable_name, ctx.target.arch)
         desktop = ctx.deploy_dir / "usr/share/applications" / f"{ctx.config.application.id}.desktop"
         desktop_check(desktop, ctx.executable_name, ctx.config.application.id)
@@ -130,7 +132,7 @@ class DebBackend(PackageBackend):
         control.mkdir(exist_ok=True)
         if opts.control_files:
             ctx.copy(opts.control_files, "DEBIAN")
-        arch = {"x86_64": "amd64", "aarch64": "arm64"}[ctx.target.arch]
+        arch = {"x86_64": "amd64", "aarch64": "arm64", "riscv64": "riscv64"}[ctx.target.arch]
         lines = [f"Package: {opts.package_name}", f"Version: {app.version}-{opts.revision}",
                  f"Architecture: {arch}", f"Maintainer: {opts.maintainer}",
                  f"Section: {opts.section}", "Priority: optional",

@@ -8,15 +8,45 @@ inputs:
     description: Application YAML path, relative to the GitHub workspace
     required: true
   target:
-    description: One target name from the application YAML
-    required: true
+    description: Target names separated by commas, or all targets matching the current runner
+    default: all
+  repository:
+    description: Optional application repository to check out; empty uses the existing workspace
+    default: ''
+  ref:
+    description: Application commit or tag for the optional checkout
+    default: ''
+  source-directory:
+    description: Checkout path relative to the workspace, used only with repository
+    default: wingsetup-source
 outputs:
+  assets:
+    description: JSON array of release file names and SHA-256 values
+    value: ${{ steps.package.outputs.assets }}
+  files:
+    description: Newline-separated distributable file names
+    value: ${{ steps.package.outputs.files }}
+  checksums:
+    description: Standard SHA-256 checksum lines
+    value: ${{ steps.package.outputs.checksums }}
   artifact-paths:
-    description: Newline-separated package and checksum paths
+    description: Newline-separated package, checksum and validation report paths
     value: ${{ steps.package.outputs.artifact-paths }}
+  installation-report:
+    description: Per-output applied and ignored installation capabilities
+    value: ${{ steps.package.outputs.installation-report }}
 runs:
   using: composite
   steps:
+    - name: Check out the requested application
+      if: inputs.repository != ''
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.repository }}
+        ref: ${{ inputs.ref }}
+        path: ${{ inputs.source-directory }}
+        submodules: recursive
+        persist-credentials: false
     - name: Install framework in a virtual environment
       shell: bash
       env:
@@ -28,6 +58,7 @@ runs:
       shell: bash
       env:
         FRAMEWORK_ROOT: ${{ github.action_path }}
+        PACKAGE_SOURCE: ${{ inputs.repository != '' && format('{0}/{1}', github.workspace, inputs.source-directory) || github.workspace }}
         PACKAGE_CONFIG: ${{ inputs.config }}
         PACKAGE_TARGET: ${{ inputs.target }}
       run: '"$WINGSETUP_PYTHON" "$FRAMEWORK_ROOT/ci/run.py"'
